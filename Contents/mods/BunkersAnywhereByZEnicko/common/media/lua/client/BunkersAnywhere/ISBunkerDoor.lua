@@ -121,28 +121,40 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
                 end
             end
 
-            -- NIVEL DE ARRIBA (Z+1): Tapar agujeros
-            local tSq = cell:getOrCreateGridSquare(currentX, currentY, topZ)
+            -- NIVEL DE ARRIBA (Z+1): Tapar agujeros (SUELO PERMANENTE)
+            local tSq = cell:getGridSquare(currentX, currentY, topZ)
+            if not tSq then
+                tSq = IsoGridSquare.new(cell, nil, currentX, currentY, topZ)
+                cell:ConnectNewSquare(tSq, false)
+            end
             
             if tSq then
                 -- Si no hay suelo, lo añadimos
                 if not tSq:getFloor() then
-                    tSq:addFloor(woodFloorSprite)
+                    -- Usamos el sprite de suelo de madera crafteable estándar: carpentry_02_57
+                    local newFloor = tSq:addFloor("carpentry_02_57")
+                    if isClient() and newFloor then
+                        newFloor:transmitCompleteItemToServer()
+                    end
                 end
                 
                 -- RECALCULAR VISIBILIDAD Y LUCES (Defensivo para B42)
-                -- Intentamos todas las variantes conocidas para evitar el error "call nil"
                 if tSq.RecalcAllWithNeighbours then
                     tSq:RecalcAllWithNeighbours(true)
                 elseif tSq.RecalcAllWithNeighbor then
                     tSq:RecalcAllWithNeighbor(true)
                 else
-                    -- Fallback seguro si los anteriores fallan
                     tSq:RecalcProperties()
                 end
                 
-                -- Marcar como cambiado para que el motor lo refresque
+                -- Marcar como cambiado para el motor/red y GUARDADO DE CHUNK (Evita que desaparezca al salir)
+                if tSq.EnsureSurroundNotNull then tSq:EnsureSurroundNotNull() end
                 if tSq.setSquareChanged then tSq:setSquareChanged() end
+                if tSq.flagForHotSave then tSq:flagForHotSave() end
+                if tSq.getChunk then
+                    local chunk = tSq:getChunk()
+                    if chunk and chunk.setHasDirtyObjects then chunk:setHasDirtyObjects(true) end
+                end
                 
                 -- Asegurarnos de que el jugador "conozca" el cuadrado para que no sea negro
                 if tSq.setIsExplored then tSq:setIsExplored(true) end
@@ -161,9 +173,15 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
 
     -- 3. Colocar Tapa de Bunker arriba (exactamente sobre la escalera)
     local topCenterSq = cell:getGridSquare(x, y, topZ)
+    if not topCenterSq then
+        topCenterSq = IsoGridSquare.new(cell, nil, x, y, topZ)
+        cell:ConnectNewSquare(topCenterSq, false)
+    end
+    
     if topCenterSq then
         local ent = topCenterSq:addTileObject(BunkersAnywhere.getEntranceSprite(topCenterSq))
         ent:getModData().bunkerType = "Entrada de Bunker"
+        if isClient() then ent:transmitCompleteItemToServer() end
         
         -- Sincronizar visualmente arriba (Defensivo)
         if topCenterSq.RecalcAllWithNeighbours then
@@ -174,7 +192,15 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
             topCenterSq:RecalcProperties()
         end
         
+        -- Marcar como modificado para GUARDAR PARTIDA
+        if topCenterSq.EnsureSurroundNotNull then topCenterSq:EnsureSurroundNotNull() end
         if topCenterSq.setSquareChanged then topCenterSq:setSquareChanged() end
+        if topCenterSq.flagForHotSave then topCenterSq:flagForHotSave() end
+        if topCenterSq.getChunk then
+            local chunk = topCenterSq:getChunk()
+            if chunk and chunk.setHasDirtyObjects then chunk:setHasDirtyObjects(true) end
+        end
+        
         if topCenterSq.setIsExplored then topCenterSq:setIsExplored(true) end
         
         if isClient() then topCenterSq:transmitCompleteSquareToServer() end
