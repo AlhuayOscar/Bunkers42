@@ -72,11 +72,15 @@ function BunkersAnywhere.removeObject(obj, playerObj, itemFullType)
     if not sq then return end
     
     obj:removeFromSquare()
+    
+    -- Si al quitar el objeto no queda suelo, ponemos tablones (evita caer al vacío)
+    BunkersAnywhere.ensureFloor(sq)
+
     playerObj:getInventory():AddItem(itemFullType)
     playerObj:setHaloNote("Objeto recogido", 200, 200, 200, 300)
 end
 
--- Función auxiliar para detectar si un objeto es una escalera (por flags o nombre de sprite)
+-- Función para detectar si un objeto es una escalera (por flags o nombre de sprite)
 function BunkersAnywhere.isStair(obj)
     if not obj then return false end
     local props = obj:getProperties()
@@ -95,6 +99,45 @@ function BunkersAnywhere.isStair(obj)
     return false
 end
 
+-- FUNCIÓN: Asegurar que una casilla tenga suelo (y guardarla permanentemente)
+function BunkersAnywhere.ensureFloor(sq)
+    if not sq then return end
+    
+    -- 1. Si no hay suelo, lo añadimos (carpentry_02_57 es el tablón de madera estándar)
+    if not sq:getFloor() then
+        local newFloor = sq:addFloor("carpentry_02_57")
+        if isClient() and newFloor then
+            newFloor:transmitCompleteItemToServer()
+        end
+    end
+    
+    -- 2. RECALCULAR VISIBILIDAD Y LUCES (Defensivo para B42)
+    if sq.RecalcAllWithNeighbours then
+        sq:RecalcAllWithNeighbours(true)
+    elseif sq.RecalcAllWithNeighbor then
+        sq:RecalcAllWithNeighbor(true)
+    else
+        sq:RecalcProperties()
+    end
+    
+    -- 3. Marcar como modificado para el motor y GUARDADO permanente (HotSave)
+    if sq.EnsureSurroundNotNull then sq:EnsureSurroundNotNull() end
+    if sq.setSquareChanged then sq:setSquareChanged() end
+    if sq.flagForHotSave then sq:flagForHotSave() end
+    if sq.getChunk then
+        local chunk = sq:getChunk()
+        if chunk and chunk.setHasDirtyObjects then chunk:setHasDirtyObjects(true) end
+    end
+    
+    -- 4. Asegurarnos de que el jugador "conozca" el cuadrado para que no sea negro
+    if sq.setIsExplored then sq:setIsExplored(true) end
+    
+    -- 5. Forzar transmisión en Multijugador
+    if isClient() then
+        sq:transmitCompleteSquareToServer()
+    end
+end
+
 -- FUNCIÓN: Usar el Bunker Kit en escaleras
 function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
     local sq = stairObj:getSquare()
@@ -109,8 +152,13 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
             local currentX = x + ix
             local currentY = y + iy
             
-            -- NIVEL DE ABAJO (Z): Quitar escalera
+            -- NIVEL DE ABAJO (Z): Quitar escalera y asegurar suelo
             local s = cell:getGridSquare(currentX, currentY, z)
+            if not s then
+                s = IsoGridSquare.new(cell, nil, currentX, currentY, z)
+                cell:ConnectNewSquare(s, false)
+            end
+            
             if s then
                 local objs = s:getObjects()
                 for i = objs:size() - 1, 0, -1 do
@@ -119,6 +167,8 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
                         s:RemoveTileObject(o)
                     end
                 end
+                -- Aseguramos suelo abajo también
+                BunkersAnywhere.ensureFloor(s)
             end
 
             -- NIVEL DE ARRIBA (Z+1): Tapar agujeros (SUELO PERMANENTE)
@@ -129,40 +179,8 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
             end
             
             if tSq then
-                -- Si no hay suelo, lo añadimos
-                if not tSq:getFloor() then
-                    -- Usamos el sprite de suelo de madera crafteable estándar: carpentry_02_57
-                    local newFloor = tSq:addFloor("carpentry_02_57")
-                    if isClient() and newFloor then
-                        newFloor:transmitCompleteItemToServer()
-                    end
-                end
-                
-                -- RECALCULAR VISIBILIDAD Y LUCES (Defensivo para B42)
-                if tSq.RecalcAllWithNeighbours then
-                    tSq:RecalcAllWithNeighbours(true)
-                elseif tSq.RecalcAllWithNeighbor then
-                    tSq:RecalcAllWithNeighbor(true)
-                else
-                    tSq:RecalcProperties()
-                end
-                
-                -- Marcar como cambiado para el motor/red y GUARDADO DE CHUNK (Evita que desaparezca al salir)
-                if tSq.EnsureSurroundNotNull then tSq:EnsureSurroundNotNull() end
-                if tSq.setSquareChanged then tSq:setSquareChanged() end
-                if tSq.flagForHotSave then tSq:flagForHotSave() end
-                if tSq.getChunk then
-                    local chunk = tSq:getChunk()
-                    if chunk and chunk.setHasDirtyObjects then chunk:setHasDirtyObjects(true) end
-                end
-                
-                -- Asegurarnos de que el jugador "conozca" el cuadrado para que no sea negro
-                if tSq.setIsExplored then tSq:setIsExplored(true) end
-                
-                -- Forzar transmisión en MP
-                if isClient() then
-                    tSq:transmitCompleteSquareToServer()
-                end
+                -- Si no hay suelo, lo añadimos y sincronizamos (Usando la nueva función)
+                BunkersAnywhere.ensureFloor(tSq)
             end
         end
     end
@@ -209,6 +227,16 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
     -- Consumir el Kit
     playerObj:getInventory():RemoveOneOf("Base.BunkerKit")
     playerObj:setHaloNote("Kit de Bunker: Estructura sellada con exito", 0, 255, 100, 400)
+end
+
+-- FUNCIÓN: Desempaquetar el Kit
+function BunkersAnywhere.unpackBunkerKit(kitItem, playerObj)
+    local inv = playerObj:getInventory()
+    inv:Remove(kitItem)
+    inv:AddItem("Base.BunkerDoor")
+    inv:AddItem("Base.BunkerLadder")
+    inv:AddItem("Base.Hammer")
+    playerObj:setHaloNote("Kit desempaquetado", 0, 255, 0, 300)
 end
 
 -- ==========================================================
@@ -288,10 +316,14 @@ function BunkersAnywhere.onRemove(targetObj, playerObj, itemFullType)
 end
 
 function BunkersAnywhere.onPlaceObject(worldobjects, playerObj, item, objName, zOffset)
-    local sq = worldobjects[1]:getSquare()
-    if luautils.walk(playerObj, sq) then
+    local sq = playerObj:getSquare()
+    if sq and luautils.walk(playerObj, sq) then
         ISTimedActionQueue.add(ISBunkerAction:new(playerObj, sq, 150, "Loot", "Carpentry", BunkersAnywhere.placeObject, worldobjects, playerObj, item, objName, zOffset))
     end
+end
+
+function BunkersAnywhere.onUnpackBunkerKit(kitItem, playerObj)
+    ISTimedActionQueue.add(ISBunkerAction:new(playerObj, playerObj:getSquare(), 100, "Loot", "HammerClick", BunkersAnywhere.unpackBunkerKit, kitItem, playerObj))
 end
 
 -- ==========================================================
@@ -325,6 +357,10 @@ local function BunkersAnywhereInventoryContext(player, context, items)
     if bunkerLadderItem then
         local option = context:addOption("Instalar Escalera (Solo Subir)", worldobjects, BunkersAnywhere.onPlaceObject, playerObj, bunkerLadderItem, "Escalera de Bunker", 1)
         if not BunkersAnywhere.canTeleportTo(playerObj, playerObj:getZ() + 1) then option.notAvailable = true end
+    end
+
+    if bunkerKitItem then
+        context:addOption("Desempaquetar Kit de Bunker", bunkerKitItem, BunkersAnywhere.onUnpackBunkerKit, playerObj)
     end
 end
 

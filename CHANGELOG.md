@@ -2,7 +2,16 @@
 
 [🇪🇸 Leer en Español](#español)
 
-### ✅ V 1.0.0 (Current Release - B42 Fix)
+### ✅ V 1.1.0 (Current Release - Stability & Logistics)
+
+*   **🧱 Dynamic Floor Guard:** Implemented a new safeguard that automatically installs wooden planks (`carpentry_02_57`) if a tile becomes floorless after removing vanilla stairs or picking up bunker objects. Prevents falling into the void.
+*   **📦 "Unpack Kit" Action:** You can now unpack the Bunker Kit from your inventory. It realistically splits into its components: **1 Bunker Hatch**, **1 Ladder**, and **1 vanilla Hammer**.
+*   **⚖️ Weighted Realism:** Rebalanced item weights for better immersion. Bunker Kit now weighs **20kg**, the Hatch weighs **10kg**, and the Ladder weighs **5kg**.
+*   **🐛 Placement Fix:** Resolved a critical Lua error ("Object tried to call nil") that occurred when attempting to install objects directly from the inventory.
+
+---
+
+### ✅ V 1.0.0 (B42 Initial Release)
 
 *   **🔧 Generic Bunker Kit Integration:** Now natively allows dismantling vanilla stairs and installing the kit from context menus that are 100% operative via "Install Bunker Kit" option.
 *   **💻 Rebuilt Mobility & Animation:**
@@ -28,9 +37,19 @@
 <a name="español"></a>
 # 📑 Bunkers Anywhere - Historial de Cambios (Changelog) - Español
 
-### ✅ V 1.0.0 (Release Actual - Soporte y Fix B42)
+### ✅ V 1.1.0 (Release Actual - Estabilidad y Logística)
+
+*   **🧱 Guardia Dinámica de Suelos:** Implementado un sistema de seguridad que instala automáticamente tablones de madera (`carpentry_02_57`) si una casilla se queda sin suelo tras quitar escaleras vanilla o recoger objetos de búnker. Evita caídas al vacío.
+*   **📦 Acción "Desempaquetar Kit":** Ahora puedes desempaquetar el Kit de Bunker desde tu inventario. Realistamente se divide en sus componentes: **1 Escotilla de Bunker**, **1 Escalera** y **1 Martillo** vanilla.
+*   **⚖️ Realismo de Pesos:** Reequilibrados los pesos de los objetos para mayor inmersión. El Kit de Bunker ahora pesa **20kg**, la Escotilla **10kg** y la Escalera **5kg**.
+*   **🐛 Fix de Instalación:** Solucionado un error crítico de Lua ("Object tried to call nil") que ocurría al intentar instalar objetos directamente desde el inventario.
+
+---
+
+### ✅ V 1.0.0 (Release Inicial B42)
 
 *   **🔧 Integración Genérica del Bunker Kit:** Se permite desmantelar escaleras vanilla e instalar el kit con menús desplegables 100% operativos usando "Instalar Kit de Bunker".
+*   **💻 Movilidad y Animación Reconstruidas:** 
 *   **💻 Movilidad y Animación Reconstruidas:** 
     *   Nuevo sistema de *TimedActions* consolidado. 
     *   Teletransportarse, instalar y desinstalar ahora obligan al jugador a caminar a la casilla exacta de la trampilla antes de iniciar (`luautils.walk()`) previniendo traspasos de texturas (clipping).

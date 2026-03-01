@@ -5,7 +5,7 @@ module Base
         Type = Normal,
         DisplayName = Puerta de Bunker,
         Icon = DoorBunker,
-        Weight = 5.0,
+        Weight = 10.0,
     }
 
     item BunkerLadder
@@ -13,7 +13,7 @@ module Base
         Type = Normal,
         DisplayName = Escalera de Bunker,
         Icon = LadderSewer,
-        Weight = 2.0,
+        Weight = 5.0,
     }
 
     item BunkerKit
@@ -21,6 +21,6 @@ module Base
         Type = Normal,
         DisplayName = Kit de Bunker,
         Icon = BunkerKit,
-        Weight = 8.0,
+        Weight = 20.0,
     }
 }
