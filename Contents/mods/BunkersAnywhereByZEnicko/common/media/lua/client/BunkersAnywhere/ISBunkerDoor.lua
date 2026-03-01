@@ -131,9 +131,8 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
                     tSq:addFloor(woodFloorSprite)
                 end
                 
-                -- RECALCULAR VISIBILIDAD Y LUCES (Para evitar el color negro)
-                tSq:RecalcAllWithNeighbor(true)
-                tSq:recalcLighting()
+                -- RECALCULAR VISIBILIDAD Y LUCES (Nombre técnico exacto en PZ B42)
+                tSq:RecalcAllWithNeighbours(true)
                 
                 -- Asegurarnos de que el jugador "conozca" el cuadrado para que no sea negro
                 tSq:setIsExplored(true)
@@ -157,8 +156,7 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
         ent:getModData().bunkerType = "Entrada de Bunker"
         
         -- Sincronizar visualmente arriba
-        topCenterSq:RecalcAllWithNeighbor(true)
-        topCenterSq:recalcLighting()
+        topCenterSq:RecalcAllWithNeighbours(true)
         topCenterSq:setIsExplored(true)
         if isClient() then topCenterSq:transmitCompleteSquareToServer() end
     end
