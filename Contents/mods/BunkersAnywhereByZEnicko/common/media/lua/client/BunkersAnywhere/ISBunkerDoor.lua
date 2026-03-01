@@ -76,6 +76,20 @@ function BunkersAnywhere.removeObject(obj, playerObj, itemFullType)
     playerObj:setHaloNote("Objeto recogido", 200, 200, 200, 300)
 end
 
+-- Función auxiliar para detectar si un objeto es una escalera (por flags o nombre de sprite)
+function BunkersAnywhere.isStair(obj)
+    if not obj then return false end
+    local props = obj:getProperties()
+    if props:Is(IsoFlagType.StairsW) or props:Is(IsoFlagType.StairsN) then
+        return true
+    end
+    local spriteName = obj:getSprite():getName()
+    if spriteName and (string.find(spriteName, "stairs") or string.find(spriteName, "escalator")) then
+        return true
+    end
+    return false
+end
+
 -- FUNCIÓN: Usar el Bunker Kit en escaleras
 function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
     local sq = stairObj:getSquare()
@@ -91,7 +105,7 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
                 local objs = s:getObjects()
                 for i = objs:size() - 1, 0, -1 do
                     local o = objs:get(i)
-                    if o:getProperties():Is(IsoFlagType.StairsW) or o:getProperties():Is(IsoFlagType.StairsN) then
+                    if BunkersAnywhere.isStair(o) then
                         s:RemoveTileObject(o)
                     end
                 end
@@ -174,7 +188,7 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
         local obj = objects:get(i)
         if obj:getModData().bunkerType then
             targetObj = obj
-        elseif obj:getProperties():Is(IsoFlagType.StairsW) or obj:getProperties():Is(IsoFlagType.StairsN) then
+        elseif BunkersAnywhere.isStair(obj) then
             stairObj = obj
         end
     end
