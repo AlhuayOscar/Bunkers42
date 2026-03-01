@@ -277,7 +277,7 @@ end
 
 function BunkersAnywhere.onTeleport(targetObj, playerObj, newZ)
     if luautils.walkAdj(playerObj, targetObj:getSquare()) then
-        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetObj:getSquare(), 100, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ))
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetObj:getSquare(), 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ))
     end
 end
 
