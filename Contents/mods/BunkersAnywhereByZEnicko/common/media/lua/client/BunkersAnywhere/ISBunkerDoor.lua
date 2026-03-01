@@ -376,3 +376,56 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
 end
 
 Events.OnFillWorldObjectContextMenu.Add(BunkersAnywhereWorldContext)
+
+local function BunkersAnywhereOnKeyPressed(key)
+    if key ~= getCore():getKey("Interact") then return end
+
+    local playerObj = getSpecificPlayer(0)
+    if not playerObj or playerObj:isDead() then return end
+
+    -- No interactuar si ya esta haciendo otra accion (TimedAction)
+    if not playerObj:getCharacterActions():isEmpty() then return end
+
+    local sq = playerObj:getCurrentSquare()
+    if not sq then return end
+    
+    local targetObj = nil
+    
+    -- Busca el tile del jugador y los adyacentes (hasta 1 tile de distancia)
+    local pX, pY, pZ = playerObj:getX(), playerObj:getY(), playerObj:getZ()
+    local cell = getCell()
+    
+    for x = math.floor(pX) - 1, math.floor(pX) + 1 do
+        for y = math.floor(pY) - 1, math.floor(pY) + 1 do
+            local searchSq = cell:getGridSquare(x, y, pZ)
+            if searchSq then
+                local objects = searchSq:getObjects()
+                for i = 0, objects:size() - 1 do
+                    local obj = objects:get(i)
+                    if obj:getModData().bunkerType then
+                        -- Encontramos un objeto de bunker, lo guardamos si esta suficientemente cerca
+                        targetObj = obj
+                        break
+                    end
+                end
+            end
+            if targetObj then break end
+        end
+        if targetObj then break end
+    end
+
+    if targetObj then
+        local bType = targetObj:getModData().bunkerType
+        if bType == "Entrada de Bunker" then
+            if BunkersAnywhere.canTeleportTo(playerObj, pZ - 1) then
+                BunkersAnywhere.onTeleport(targetObj, playerObj, pZ - 1)
+            end
+        elseif bType == "Escalera de Bunker" then
+            if BunkersAnywhere.canTeleportTo(playerObj, pZ + 1) then
+                BunkersAnywhere.onTeleport(targetObj, playerObj, pZ + 1)
+            end
+        end
+    end
+end
+
+Events.OnKeyPressed.Add(BunkersAnywhereOnKeyPressed)
