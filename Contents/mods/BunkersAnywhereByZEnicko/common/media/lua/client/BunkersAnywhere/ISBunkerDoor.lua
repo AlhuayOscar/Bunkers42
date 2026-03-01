@@ -13,20 +13,21 @@ end
 
 -- Función para verificar si hay un piso válido en la coordenada Z destino
 function BunkersAnywhere.canTeleportTo(playerObj, targetZ)
-    -- Límites del mapa de PZ (0 a 7, donde 0 es el suelo base o sótano)
-    if targetZ < 0 or targetZ > 7 then return false end
-    
-    -- Para bajar (especialmente a sótanos), a veces el square no existe hasta que el jugador está cerca
-    -- o puede ser un área natural. Vamos a permitir bajar siempre que esté dentro de los límites del motor (Z >= 0).
-    -- Solo seremos estrictos para SUBIR (para no aparecer flotando en el aire si no hay techo/piso).
+    -- En la Build 42, los sótanos pueden llegar hasta niveles negativos profundos (ej. -17 o -32)
+    -- Extendemos los límites para permitir el teletransporte a sótanos profundos.
+    if targetZ < -32 or targetZ > 7 then return false end
     
     local currentZ = playerObj:getZ()
+    
+    -- Para bajar (IR HACIA SÓTANOS):
     if targetZ < currentZ then
-        -- Si bajamos, permitimos el paso siempre que Z sea válido (0 o más)
+        -- Permitimos bajar siempre, ya que el motor de PZ manejará la creación del nivel
+        -- o el personaje simplemente descenderá al nivel inferior del búnker.
         return true
     end
 
-    -- Para subir, sí verificamos que exista un suelo construido o natural arriba
+    -- Para subir (IR HACIA SUPERFICIE O TECHO):
+    -- Verificamos que exista un suelo construido o natural arriba para no aparecer en el vacío.
     local x = math.floor(playerObj:getX())
     local y = math.floor(playerObj:getY())
     local square = getCell():getGridSquare(x, y, targetZ)
