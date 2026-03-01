@@ -1,0 +1,10 @@
+module Base
+{
+    item BunkerDoor
+    {
+        Type = Normal,
+        DisplayName = Puerta de Bunker,
+        Icon = DoorBunker,
+        Weight = 5.0,
+    }
+}

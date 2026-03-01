@@ -1,0 +1,5 @@
+version=1
+title=Bunkers anywhere by ZEnicko
+description=Un mod para poder teletransportar al jugador desde la planta baja (Ground Floor) a un s\u00f3tano (Basement 1) donde los zombies no pueden entrar ni usar las puertas.
+tags=Map,Items,Realistic
+visibility=public
