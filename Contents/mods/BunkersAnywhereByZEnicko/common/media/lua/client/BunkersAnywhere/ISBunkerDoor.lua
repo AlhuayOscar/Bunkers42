@@ -145,7 +145,7 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
                 if tSq.setSquareChanged then tSq:setSquareChanged() end
                 
                 -- Asegurarnos de que el jugador "conozca" el cuadrado para que no sea negro
-                tSq:setIsExplored(true)
+                if tSq.setIsExplored then tSq:setIsExplored(true) end
                 
                 -- Forzar transmisión en MP
                 if isClient() then
@@ -175,7 +175,7 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
         end
         
         if topCenterSq.setSquareChanged then topCenterSq:setSquareChanged() end
-        topCenterSq:setIsExplored(true)
+        if topCenterSq.setIsExplored then topCenterSq:setIsExplored(true) end
         
         if isClient() then topCenterSq:transmitCompleteSquareToServer() end
     end
