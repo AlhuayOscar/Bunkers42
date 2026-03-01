@@ -212,55 +212,91 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
 end
 
 -- ==========================================================
--- Timed Action: Instalar Kit de Búnker
--- (Integrado aquí para evitar problemas de carga/hot-reload)
+-- Timed Action: Acción Genérica del Bunker (Instalar/Subir/Bajar)
 -- ==========================================================
 require "TimedActions/ISBaseTimedAction"
 require "TimedActions/ISTimedActionQueue"
 
-ISInstallBunkerKitAction = ISBaseTimedAction:derive("ISInstallBunkerKitAction");
+ISBunkerAction = ISBaseTimedAction:derive("ISBunkerAction");
 
-function ISInstallBunkerKitAction:isValid()
-    return self.character:getInventory():contains("BunkerKit");
+function ISBunkerAction:isValid()
+    return true; 
 end
 
-function ISInstallBunkerKitAction:update()
-    self.character:faceLocation(self.stairObj:getSquare():getX(), self.stairObj:getSquare():getY())
+function ISBunkerAction:update()
+    self.character:faceLocation(self.targetSq:getX(), self.targetSq:getY())
     self.character:setMetabolicTarget(Metabolics.HeavyWork);
 end
 
-function ISInstallBunkerKitAction:start()
-    self:setActionAnim("BuildLow")
-    self.character:getEmitter():playSound("Carpentry")
+function ISBunkerAction:start()
+    self:setActionAnim(self.anim)
+    self.character:SetVariable("LootPosition", "Low")
+    if self.sound then
+        self.character:getEmitter():playSound(self.sound)
+    end
 end
 
-function ISInstallBunkerKitAction:stop()
+function ISBunkerAction:stop()
     ISBaseTimedAction.stop(self);
 end
 
-function ISInstallBunkerKitAction:perform()
-    BunkersAnywhere.useBunkerKit(self.stairObj, self.character)
+function ISBunkerAction:perform()
+    if self.callback then
+        self.callback(self.arg1, self.arg2, self.arg3, self.arg4, self.arg5)
+    end
     ISBaseTimedAction.perform(self);
 end
 
-function ISInstallBunkerKitAction:new(character, stairObj)
-    local o = {}
-    setmetatable(o, self)
-    self.__index = self
-    o.character = character
-    o.stairObj = stairObj
-    o.maxTime = 250 -- duracion de la construccion
+function ISBunkerAction:new(character, targetSq, time, anim, sound, callback, arg1, arg2, arg3, arg4, arg5)
+    local o = ISBaseTimedAction.new(self, character)
+    o.targetSq = targetSq
+    o.anim = anim or "Loot"
+    o.sound = sound
+    o.callback = callback
+    o.arg1 = arg1
+    o.arg2 = arg2
+    o.arg3 = arg3
+    o.arg4 = arg4
+    o.arg5 = arg5
+    o.maxTime = time
     if character:isTimedActionInstant() then 
         o.maxTime = 1; 
     end
     return o
 end
 
+-- ==========================================================
+-- Wrappers para forzar TimedActions en los Menús
+-- ==========================================================
+
 function BunkersAnywhere.onInstallBunkerKit(stairObj, playerObj)
     if luautils.walkAdj(playerObj, stairObj:getSquare()) then
-        ISTimedActionQueue.add(ISInstallBunkerKitAction:new(playerObj, stairObj))
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, stairObj:getSquare(), 250, "Loot", "Carpentry", BunkersAnywhere.useBunkerKit, stairObj, playerObj))
     end
 end
+
+function BunkersAnywhere.onTeleport(targetObj, playerObj, newZ)
+    if luautils.walkAdj(playerObj, targetObj:getSquare()) then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetObj:getSquare(), 100, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ))
+    end
+end
+
+function BunkersAnywhere.onRemove(targetObj, playerObj, itemFullType)
+    if luautils.walkAdj(playerObj, targetObj:getSquare()) then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetObj:getSquare(), 150, "Loot", "Carpentry", BunkersAnywhere.removeObject, targetObj, playerObj, itemFullType))
+    end
+end
+
+function BunkersAnywhere.onPlaceObject(worldobjects, playerObj, item, objName, zOffset)
+    local sq = worldobjects[1]:getSquare()
+    if luautils.walkAdj(playerObj, sq) then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, sq, 150, "Loot", "Carpentry", BunkersAnywhere.placeObject, worldobjects, playerObj, item, objName, zOffset))
+    end
+end
+
+-- ==========================================================
+-- Context Menus
+-- ==========================================================
 
 local function BunkersAnywhereInventoryContext(player, context, items)
     local bunkerDoorItem = nil
@@ -279,14 +315,15 @@ local function BunkersAnywhereInventoryContext(player, context, items)
     end
 
     local playerObj = getSpecificPlayer(player)
+    local worldobjects = { playerObj:getCurrentSquare() } -- Fallback
 
     if bunkerDoorItem then
-        local option = context:addOption("Instalar Entrada (Solo Bajar)", worldobjects, BunkersAnywhere.placeObject, playerObj, bunkerDoorItem, "Entrada de Bunker", -1)
+        local option = context:addOption("Instalar Entrada (Solo Bajar)", worldobjects, BunkersAnywhere.onPlaceObject, playerObj, bunkerDoorItem, "Entrada de Bunker", -1)
         if not BunkersAnywhere.canTeleportTo(playerObj, playerObj:getZ() - 1) then option.notAvailable = true end
     end
 
     if bunkerLadderItem then
-        local option = context:addOption("Instalar Escalera (Solo Subir)", worldobjects, BunkersAnywhere.placeObject, playerObj, bunkerLadderItem, "Escalera de Bunker", 1)
+        local option = context:addOption("Instalar Escalera (Solo Subir)", worldobjects, BunkersAnywhere.onPlaceObject, playerObj, bunkerLadderItem, "Escalera de Bunker", 1)
         if not BunkersAnywhere.canTeleportTo(playerObj, playerObj:getZ() + 1) then option.notAvailable = true end
     end
 end
@@ -319,13 +356,13 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
         context:addSubMenu(submenu, submenuCtx)
         
         if bType == "Entrada de Bunker" then
-            local downOption = submenuCtx:addOption("Bajar al Sotano (Z-1)", playerObj, BunkersAnywhere.teleportToZ, z - 1)
+            local downOption = submenuCtx:addOption("Bajar al Sotano (Z-1)", targetObj, BunkersAnywhere.onTeleport, playerObj, z - 1)
             if not BunkersAnywhere.canTeleportTo(playerObj, z - 1) then downOption.notAvailable = true end
-            submenuCtx:addOption("Desinstalar Entrada", targetObj, BunkersAnywhere.removeObject, playerObj, "Base.BunkerDoor")
+            submenuCtx:addOption("Desinstalar Entrada", targetObj, BunkersAnywhere.onRemove, playerObj, "Base.BunkerDoor")
         else
-            local upOption = submenuCtx:addOption("Subir a Planta Baja (Z+1)", playerObj, BunkersAnywhere.teleportToZ, z + 1)
+            local upOption = submenuCtx:addOption("Subir a Planta Baja (Z+1)", targetObj, BunkersAnywhere.onTeleport, playerObj, z + 1)
             if not BunkersAnywhere.canTeleportTo(playerObj, z + 1) then upOption.notAvailable = true end
-            submenuCtx:addOption("Desinstalar Escalera", targetObj, BunkersAnywhere.removeObject, playerObj, "Base.BunkerLadder")
+            submenuCtx:addOption("Desinstalar Escalera", targetObj, BunkersAnywhere.onRemove, playerObj, "Base.BunkerLadder")
         end
     end
 
