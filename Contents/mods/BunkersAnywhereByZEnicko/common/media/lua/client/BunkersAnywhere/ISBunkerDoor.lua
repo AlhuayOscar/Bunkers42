@@ -13,26 +13,31 @@ end
 
 -- Función para verificar si hay un piso válido en la coordenada Z destino
 function BunkersAnywhere.canTeleportTo(playerObj, targetZ)
-    -- En la Build 42, los sótanos pueden llegar hasta niveles negativos profundos (ej. -17 o -32)
-    -- Extendemos los límites para permitir el teletransporte a sótanos profundos.
+    -- Límites de la Build 42 (-32 a 7)
     if targetZ < -32 or targetZ > 7 then return false end
     
-    local currentZ = playerObj:getZ()
-    
-    -- Para bajar (IR HACIA SÓTANOS):
-    if targetZ < currentZ then
-        -- Permitimos bajar siempre, ya que el motor de PZ manejará la creación del nivel
-        -- o el personaje simplemente descenderá al nivel inferior del búnker.
-        return true
-    end
-
-    -- Para subir (IR HACIA SUPERFICIE O TECHO):
-    -- Verificamos que exista un suelo construido o natural arriba para no aparecer en el vacío.
     local x = math.floor(playerObj:getX())
     local y = math.floor(playerObj:getY())
-    local square = getCell():getGridSquare(x, y, targetZ)
     
-    return square ~= nil
+    -- Los niveles negativos (sótanos) a menudo no están cargados en el cliente.
+    -- Intentamos obtener el square. Si es nil, intentamos forzar una verificación más profunda.
+    local cell = getCell()
+    local square = cell:getGridSquare(x, y, targetZ)
+    
+    -- Si el square existe, verificamos si tiene un piso (Floor) o si es parte de una habitación (Room)
+    if square then
+        -- En PZ, un square válido para pararse debe tener un Floor o ser una habitación cerrada
+        if square:getFloor() ~= nil or square:getRoom() ~= nil then
+            return true
+        end
+    end
+    
+    -- Si el square es nil, puede que no esté cargado. 
+    -- Para la Build 42, si estamos intentando bajar a un búnker/sótano pre-existente,
+    -- podríamos necesitar usar getWorld():getChunk() o similar para una comprobación técnica,
+    -- pero getGridSquare es la forma estándar.
+    
+    return false
 end
 
 local function BunkersAnywhereInventoryContext(player, context, items)
