@@ -2,9 +2,9 @@ BunkersAnywhere = BunkersAnywhere or {}
 
 -- Sprites dinámicos
 BunkersAnywhere.Sprites = {
-    InsideEntrance = "location_sewer_01_32", -- Trampilla de metal (sewer hatch)
-    OutsideEntrance = "street_decoration_01_15", -- Registro/Manhole exterior
-    Ladder = "location_sewer_01_24" -- Escalera de pared
+    InsideEntrance = "street_decoration_01_15", -- Escotilla/Manhole
+    OutsideEntrance = "street_decoration_01_15", -- Escotilla/Manhole
+    Ladder = "location_sewer_01_32" -- Escalera de alcantarilla (B42 style)
 }
 
 -- Función para elegir el sprite según el entorno
