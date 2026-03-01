@@ -211,6 +211,48 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
     playerObj:setHaloNote("Kit de Bunker: Estructura sellada con exito", 0, 255, 100, 400)
 end
 
+-- ==========================================================
+-- Timed Action: Instalar Kit de Búnker
+-- (Integrado aquí para evitar problemas de carga/hot-reload)
+-- ==========================================================
+ISInstallBunkerKitAction = ISTimedAction:derive("ISInstallBunkerKitAction");
+
+function ISInstallBunkerKitAction:isValid()
+    return self.character:getInventory():contains("BunkerKit");
+end
+
+function ISInstallBunkerKitAction:update()
+    self.character:faceLocation(self.stairObj:getSquare():getX(), self.stairObj:getSquare():getY())
+    self.character:setMetabolicTarget(Metabolics.HeavyWork);
+end
+
+function ISInstallBunkerKitAction:start()
+    self:setActionAnim("BuildLow")
+    self.character:getEmitter():playSound("Carpentry")
+end
+
+function ISInstallBunkerKitAction:stop()
+    ISBaseTimedAction.stop(self);
+end
+
+function ISInstallBunkerKitAction:perform()
+    BunkersAnywhere.useBunkerKit(self.stairObj, self.character)
+    ISBaseTimedAction.perform(self);
+end
+
+function ISInstallBunkerKitAction:new(character, stairObj)
+    local o = {}
+    setmetatable(o, self)
+    self.__index = self
+    o.character = character
+    o.stairObj = stairObj
+    o.maxTime = 250 -- duracion de la construccion
+    if character:isTimedActionInstant() then 
+        o.maxTime = 1; 
+    end
+    return o
+end
+
 function BunkersAnywhere.onInstallBunkerKit(stairObj, playerObj)
     if luautils.walkAdj(playerObj, stairObj:getSquare()) then
         ISTimedActionQueue.add(ISInstallBunkerKitAction:new(playerObj, stairObj))
