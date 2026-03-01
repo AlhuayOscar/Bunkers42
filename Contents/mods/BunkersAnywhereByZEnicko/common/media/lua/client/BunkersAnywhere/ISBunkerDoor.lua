@@ -2,7 +2,7 @@ BunkersAnywhere = BunkersAnywhere or {}
 
 -- Sprites dinámicos
 BunkersAnywhere.Sprites = {
-    InsideEntrance = "fixtures_doors_01_52", -- Trampilla metálica interior
+    InsideEntrance = "location_sewer_01_32", -- Trampilla de metal (sewer hatch)
     OutsideEntrance = "street_decoration_01_15", -- Registro/Manhole exterior
     Ladder = "location_sewer_01_24" -- Escalera de pared
 }
