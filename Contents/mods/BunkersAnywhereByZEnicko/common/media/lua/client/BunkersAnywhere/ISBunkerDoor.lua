@@ -215,6 +215,8 @@ end
 -- Timed Action: Instalar Kit de Búnker
 -- (Integrado aquí para evitar problemas de carga/hot-reload)
 -- ==========================================================
+require "TimedActions/ISTimedAction"
+
 ISInstallBunkerKitAction = ISTimedAction:derive("ISInstallBunkerKitAction");
 
 function ISInstallBunkerKitAction:isValid()
