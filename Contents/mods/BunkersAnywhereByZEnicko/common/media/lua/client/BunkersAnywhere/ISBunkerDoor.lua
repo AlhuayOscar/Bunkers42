@@ -1,8 +1,10 @@
 BunkersAnywhere = BunkersAnywhere or {}
 
+-- Sprite que usaremos para la entrada (un registro/manhole de metal común en el vanilla)
+BunkersAnywhere.BunkerSprite = "street_decoration_01_15"
+
 function BunkersAnywhere.teleportToZ(playerObj, newZ)
     if playerObj and newZ ~= nil then
-        -- En Project Zomboid, para teletransportar de manera segura podemos actualizar las coordenadas Z
         local x = playerObj:getX()
         local y = playerObj:getY()
         playerObj:setZ(newZ)
@@ -11,33 +13,50 @@ function BunkersAnywhere.teleportToZ(playerObj, newZ)
     end
 end
 
--- Función para verificar si hay un piso válido en la coordenada Z destino
 function BunkersAnywhere.canTeleportTo(playerObj, targetZ)
-    -- Límites de la Build 42 (-32 a 7)
     if targetZ < -32 or targetZ > 7 then return false end
     
     local x = math.floor(playerObj:getX())
     local y = math.floor(playerObj:getY())
-    
-    -- Los niveles negativos (sótanos) a menudo no están cargados en el cliente.
-    -- Intentamos obtener el square. Si es nil, intentamos forzar una verificación más profunda.
     local cell = getCell()
     local square = cell:getGridSquare(x, y, targetZ)
     
-    -- Si el square existe, verificamos si tiene un piso (Floor) o si es parte de una habitación (Room)
     if square then
-        -- En PZ, un square válido para pararse debe tener un Floor o ser una habitación cerrada
         if square:getFloor() ~= nil or square:getRoom() ~= nil then
             return true
         end
     end
-    
-    -- Si el square es nil, puede que no esté cargado. 
-    -- Para la Build 42, si estamos intentando bajar a un búnker/sótano pre-existente,
-    -- podríamos necesitar usar getWorld():getChunk() o similar para una comprobación técnica,
-    -- pero getGridSquare es la forma estándar.
-    
     return false
+end
+
+-- Función para colocar la entrada en el mundo
+function BunkersAnywhere.placeBunker(worldobjects, playerObj, item)
+    local sq = playerObj:getSquare()
+    if not sq then return end
+    
+    -- Creamos un objeto con el sprite del búnker
+    local obj = IsoObject.new(sq, BunkersAnywhere.BunkerSprite, "BunkerEntrance")
+    obj:getModData().isBunker = true
+    sq:AddChild(obj)
+    
+    -- Transmitimos el cambio al servidor si es MP
+    if isClient() then
+        obj:transmitCompleteItemToServer()
+    end
+    
+    -- Removemos el ítem del inventario
+    playerObj:getInventory():Remove(item)
+    playerObj:setHaloNote("Entrada de Bunker instalada", 255, 255, 0, 300)
+end
+
+-- Función para desinstalar la entrada
+function BunkersAnywhere.removeBunker(obj, playerObj)
+    local sq = obj:getSquare()
+    if not sq then return end
+    
+    sq:RemoveTileObject(obj)
+    playerObj:getInventory():AddItem("Base.BunkerDoor")
+    playerObj:setHaloNote("Entrada de Bunker recogida", 255, 255, 0, 300)
 end
 
 local function BunkersAnywhereInventoryContext(player, context, items)
@@ -57,6 +76,9 @@ local function BunkersAnywhereInventoryContext(player, context, items)
         local playerObj = getSpecificPlayer(player)
         local z = playerObj:getZ()
         
+        -- Opción de colocar en el suelo
+        context:addOption("Instalar Entrada de Bunker", nil, BunkersAnywhere.placeBunker, playerObj, bunkerDoorItem)
+
         -- Sótano (Abajo)
         local downOption = context:addOption("Bunker: Bajar al Sotano (Z-1)", playerObj, BunkersAnywhere.teleportToZ, z - 1)
         if not BunkersAnywhere.canTeleportTo(playerObj, z - 1) then
@@ -83,11 +105,22 @@ Events.OnFillInventoryObjectContextMenu.Add(BunkersAnywhereInventoryContext)
 
 local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
     local playerObj = getSpecificPlayer(player)
+    local sq = worldobjects[1]:getSquare()
+    local z = playerObj:getZ()
     
-    local inventory = playerObj:getInventory()
-    if inventory:contains("BunkerDoor") then
-        local z = playerObj:getZ()
-        local submenu = context:addOption("Usar Puerta de Bunker")
+    -- Buscamos si el objeto clickeado es una entrada de búnker
+    local bunkerObj = nil
+    local objects = sq:getObjects()
+    for i = 0, objects:size() - 1 do
+        local obj = objects:get(i)
+        if obj:getModData().isBunker or obj:getSprite():getName() == BunkersAnywhere.BunkerSprite then
+            bunkerObj = obj
+            break
+        end
+    end
+
+    if bunkerObj then
+        local submenu = context:addOption("Entrada de Bunker")
         local submenuCtx = ISContextMenu:getNew(context)
         context:addSubMenu(submenu, submenuCtx)
         
@@ -102,6 +135,9 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
         if not BunkersAnywhere.canTeleportTo(playerObj, z + 1) then
             upOption.notAvailable = true
         end
+        
+        -- Desinstalar
+        submenuCtx:addOption("Desinstalar Entrada", bunkerObj, BunkersAnywhere.removeBunker, playerObj)
     end
 end
 
