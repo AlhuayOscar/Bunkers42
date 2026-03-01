@@ -84,8 +84,13 @@ function BunkersAnywhere.isStair(obj)
         return true
     end
     local spriteName = obj:getSprite():getName()
-    if spriteName and (string.find(spriteName, "stairs") or string.find(spriteName, "escalator")) then
-        return true
+    if spriteName then
+        if string.find(spriteName, "stairs") or string.find(spriteName, "escalator") or
+           string.find(spriteName, "carpintery_02_89") or 
+           string.find(spriteName, "constructedobjects_01_88") or 
+           string.find(spriteName, "crafted_02_106") then
+            return true
+        end
     end
     return false
 end
