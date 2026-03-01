@@ -13,14 +13,24 @@ end
 
 -- Función para verificar si hay un piso válido en la coordenada Z destino
 function BunkersAnywhere.canTeleportTo(playerObj, targetZ)
+    -- Límites del mapa de PZ (0 a 7, donde 0 es el suelo base o sótano)
     if targetZ < 0 or targetZ > 7 then return false end
     
+    -- Para bajar (especialmente a sótanos), a veces el square no existe hasta que el jugador está cerca
+    -- o puede ser un área natural. Vamos a permitir bajar siempre que esté dentro de los límites del motor (Z >= 0).
+    -- Solo seremos estrictos para SUBIR (para no aparecer flotando en el aire si no hay techo/piso).
+    
+    local currentZ = playerObj:getZ()
+    if targetZ < currentZ then
+        -- Si bajamos, permitimos el paso siempre que Z sea válido (0 o más)
+        return true
+    end
+
+    -- Para subir, sí verificamos que exista un suelo construido o natural arriba
     local x = math.floor(playerObj:getX())
     local y = math.floor(playerObj:getY())
     local square = getCell():getGridSquare(x, y, targetZ)
     
-    -- Si el square existe y tiene un piso (no es el vacío), es válido.
-    -- En PZ, si no hay construcción o terreno, el square suele ser nil o no tener Floor.
     return square ~= nil
 end
 
