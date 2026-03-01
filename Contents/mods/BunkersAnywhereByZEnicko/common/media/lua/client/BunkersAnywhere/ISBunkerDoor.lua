@@ -1,8 +1,20 @@
 BunkersAnywhere = BunkersAnywhere or {}
 
--- Sprites que usaremos
-BunkersAnywhere.BunkerSprite = "street_decoration_01_15" -- Tapa/Manhole para BAJAR
-BunkersAnywhere.LadderSprite = "location_sewer_01_24"   -- Escalera de alcantarilla para SUBIR
+-- Sprites dinámicos
+BunkersAnywhere.Sprites = {
+    InsideEntrance = "fixtures_doors_01_52", -- Trampilla metálica interior
+    OutsideEntrance = "street_decoration_01_15", -- Registro/Manhole exterior
+    Ladder = "location_sewer_01_24" -- Escalera de pared
+}
+
+-- Función para elegir el sprite según el entorno
+function BunkersAnywhere.getEntranceSprite(sq)
+    if sq:isOutside() then
+        return BunkersAnywhere.Sprites.OutsideEntrance
+    else
+        return BunkersAnywhere.Sprites.InsideEntrance
+    end
+end
 
 function BunkersAnywhere.teleportToZ(playerObj, newZ)
     if playerObj and newZ ~= nil then
@@ -30,20 +42,21 @@ function BunkersAnywhere.canTeleportTo(playerObj, targetZ)
 end
 
 -- Función para colocar objetos en el mundo
-function BunkersAnywhere.placeObject(worldobjects, playerObj, item, sprite, objName, zDir)
-    local targetZ = playerObj:getZ() + zDir
-    if not BunkersAnywhere.canTeleportTo(playerObj, targetZ) then
-        playerObj:setHaloNote("No hay suelo en el destino (" .. (zDir > 0 and "arriba" or "abajo") .. ")", 255, 0, 0, 350)
-        return
-    end
-
+function BunkersAnywhere.placeObject(worldobjects, playerObj, item, objName, zDir)
     local sq = playerObj:getSquare()
     if not sq then return end
     
+    local targetZ = playerObj:getZ() + zDir
+    if not BunkersAnywhere.canTeleportTo(playerObj, targetZ) then
+        playerObj:setHaloNote("No hay suelo en el destino", 255, 0, 0, 350)
+        return
+    end
+
+    local sprite = (objName == "Entrada de Bunker") and BunkersAnywhere.getEntranceSprite(sq) or BunkersAnywhere.Sprites.Ladder
     local obj = sq:addTileObject(sprite)
     if not obj then return end
     
-    obj:getModData().bunkerType = objName -- "BunkerEntrance" o "BunkerLadder"
+    obj:getModData().bunkerType = objName
     
     if isClient() then
         obj:transmitCompleteItemToServer()
@@ -61,6 +74,51 @@ function BunkersAnywhere.removeObject(obj, playerObj, itemFullType)
     obj:removeFromSquare()
     playerObj:getInventory():AddItem(itemFullType)
     playerObj:setHaloNote("Objeto recogido", 200, 200, 200, 300)
+end
+
+-- FUNCIÓN NUEVA: Convertir escaleras vanilla
+function BunkersAnywhere.convertStairs(stairObj, playerObj)
+    local sq = stairObj:getSquare()
+    local z = sq:getZ()
+    local x, y = sq:getX(), sq:getY()
+    
+    -- Buscamos el punto más alto de la escalera (donde el jugador "termina")
+    -- En PZ las escaleras suelen ocupar 3 tiles. Buscamos el tile que tiene acceso al piso de arriba.
+    local topSq = nil
+    if stairObj:getProperties():Is(IsoFlagType.StairsW) or stairObj:getProperties():Is(IsoFlagType.StairsN) then
+        -- Intentamos detectar el cuadrado superior
+        topSq = getCell():getGridSquare(x, y, z + 1)
+        if not topSq then
+            -- A veces el objeto clickeado es la base, buscamos el tope
+            -- (Lógica simplificada: usamos el cuadrado actual para la entrada y el de abajo para la escalera)
+            topSq = sq
+        end
+    end
+
+    if not topSq then topSq = sq end
+    local bottomSq = getCell():getGridSquare(topSq:getX(), topSq:getY(), topSq:getZ() - 1)
+
+    -- Consumimos los materiales
+    local inv = playerObj:getInventory()
+    local door = inv:FindAndReturn("Base.BunkerDoor")
+    local ladder = inv:FindAndReturn("Base.BunkerLadder")
+
+    if door and ladder then
+        -- 1. Eliminar la escalera (esto es complejo porque son varios objetos, eliminamos el clickeado y vecinos)
+        sq:RemoveTileObject(stairObj)
+        -- 2. Colocar Entrance arriba
+        local ent = topSq:addTileObject(BunkersAnywhere.getEntranceSprite(topSq))
+        ent:getModData().bunkerType = "Entrada de Bunker"
+        -- 3. Colocar Ladder abajo
+        if bottomSq then
+            local lad = bottomSq:addTileObject(BunkersAnywhere.Sprites.Ladder)
+            lad:getModData().bunkerType = "Escalera de Bunker"
+        end
+        
+        inv:Remove(door)
+        inv:Remove(ladder)
+        playerObj:setHaloNote("Escaleras convertidas a Bunker", 0, 255, 255, 400)
+    end
 end
 
 local function BunkersAnywhereInventoryContext(player, context, items)
@@ -81,26 +139,17 @@ local function BunkersAnywhereInventoryContext(player, context, items)
 
     local playerObj = getSpecificPlayer(player)
 
-    -- Solo permitir INSTALAR desde el inventario. Se removió el teleport directo para forzar el uso del tile.
     if bunkerDoorItem then
-        local option = context:addOption("Instalar Entrada (Solo Bajar)", worldobjects, BunkersAnywhere.placeObject, playerObj, bunkerDoorItem, BunkersAnywhere.BunkerSprite, "Entrada de Bunker", -1)
+        local option = context:addOption("Instalar Entrada (Solo Bajar)", worldobjects, BunkersAnywhere.placeObject, playerObj, bunkerDoorItem, "Entrada de Bunker", -1)
         if not BunkersAnywhere.canTeleportTo(playerObj, playerObj:getZ() - 1) then
-            local tooltip = ISWorldObjectContextMenu.addToolTip()
-            tooltip:setName("Error")
-            tooltip.description = "Necesitas una habitacion o suelo debajo para instalar esto."
             option.notAvailable = true
-            option.toolTip = tooltip
         end
     end
 
     if bunkerLadderItem then
-        local option = context:addOption("Instalar Escalera (Solo Subir)", worldobjects, BunkersAnywhere.placeObject, playerObj, bunkerLadderItem, BunkersAnywhere.LadderSprite, "Escalera de Bunker", 1)
+        local option = context:addOption("Instalar Escalera (Solo Subir)", worldobjects, BunkersAnywhere.placeObject, playerObj, bunkerLadderItem, "Escalera de Bunker", 1)
         if not BunkersAnywhere.canTeleportTo(playerObj, playerObj:getZ() + 1) then
-            local tooltip = ISWorldObjectContextMenu.addToolTip()
-            tooltip:setName("Error")
-            tooltip.description = "Necesitas una habitacion o suelo arriba para instalar esto."
             option.notAvailable = true
-            option.toolTip = tooltip
         end
     end
 end
@@ -113,16 +162,18 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
     local z = playerObj:getZ()
     
     local targetObj = nil
+    local stairObj = nil
     local objects = sq:getObjects()
     for i = 0, objects:size() - 1 do
         local obj = objects:get(i)
-        local bType = obj:getModData().bunkerType
-        if bType then
+        if obj:getModData().bunkerType then
             targetObj = obj
-            break
+        elseif obj:getProperties():Is(IsoFlagType.StairsW) or obj:getProperties():Is(IsoFlagType.StairsN) then
+            stairObj = obj
         end
     end
 
+    -- Menú para objetos del MOD
     if targetObj then
         local bType = targetObj:getModData().bunkerType
         local optionName = (bType == "Entrada de Bunker") and "Entrada (Bajar)" or "Escalera (Subir)"
@@ -131,15 +182,21 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
         context:addSubMenu(submenu, submenuCtx)
         
         if bType == "Entrada de Bunker" then
-            -- Solo BAJAR
             local downOption = submenuCtx:addOption("Bajar al Sotano (Z-1)", playerObj, BunkersAnywhere.teleportToZ, z - 1)
             if not BunkersAnywhere.canTeleportTo(playerObj, z - 1) then downOption.notAvailable = true end
             submenuCtx:addOption("Desinstalar Entrada", targetObj, BunkersAnywhere.removeObject, playerObj, "Base.BunkerDoor")
         else
-            -- Solo SUBIR
             local upOption = submenuCtx:addOption("Subir a Planta Baja (Z+1)", playerObj, BunkersAnywhere.teleportToZ, z + 1)
             if not BunkersAnywhere.canTeleportTo(playerObj, z + 1) then upOption.notAvailable = true end
             submenuCtx:addOption("Desinstalar Escalera", targetObj, BunkersAnywhere.removeObject, playerObj, "Base.BunkerLadder")
+        end
+    end
+
+    -- Menú para convertir escaleras VANILLA
+    if stairObj then
+        local inv = playerObj:getInventory()
+        if inv:contains("BunkerDoor") and inv:contains("BunkerLadder") then
+            context:addOption("Sustituir por Bunker (Consumir items)", stairObj, BunkersAnywhere.convertStairs, playerObj)
         end
     end
 end
