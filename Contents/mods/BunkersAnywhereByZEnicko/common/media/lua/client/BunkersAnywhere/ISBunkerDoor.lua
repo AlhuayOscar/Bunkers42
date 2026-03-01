@@ -86,7 +86,7 @@ function BunkersAnywhere.isStair(obj)
     local spriteName = obj:getSprite():getName()
     if spriteName then
         if string.find(spriteName, "stairs") or string.find(spriteName, "escalator") or
-           string.find(spriteName, "carpentry_02_89") or 
+           string.find(spriteName, "carpentry_02_88") or 
            string.find(spriteName, "constructedobjects_01_88") or 
            string.find(spriteName, "crafted_02_106") then
             return true
@@ -122,22 +122,21 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
             end
 
             -- NIVEL DE ARRIBA (Z+1): Tapar agujeros
-            local tSq = cell:getGridSquare(currentX, currentY, topZ)
+            -- getOrCreateGridSquare es más seguro para asegurar que el cuadrado exista
+            local tSq = cell:getOrCreateGridSquare(currentX, currentY, topZ)
             
-            -- Si el cuadrado no existe, lo creamos de forma más robusta
-            if not tSq then
-                tSq = IsoGridSquare.new(cell, nil, currentX, currentY, topZ)
-                cell:ConnectSq(tSq)
-            end
-
             if tSq then
                 -- Si no hay suelo, lo añadimos
                 if not tSq:getFloor() then
                     tSq:addFloor(woodFloorSprite)
                 end
                 
-                -- RECALCULAR PROPIEDADES (Para evitar el color negro y permitir interacción)
+                -- RECALCULAR VISIBILIDAD Y LUCES (Para evitar el color negro)
                 tSq:RecalcAllWithNeighbor(true)
+                tSq:recalcLighting()
+                
+                -- Asegurarnos de que el jugador "conozca" el cuadrado para que no sea negro
+                tSq:setIsExplored(true)
                 
                 -- Forzar transmisión en MP
                 if isClient() then
@@ -159,6 +158,8 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
         
         -- Sincronizar visualmente arriba
         topCenterSq:RecalcAllWithNeighbor(true)
+        topCenterSq:recalcLighting()
+        topCenterSq:setIsExplored(true)
         if isClient() then topCenterSq:transmitCompleteSquareToServer() end
     end
 
