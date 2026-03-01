@@ -7,4 +7,12 @@ module Base
         Icon = DoorBunker,
         Weight = 5.0,
     }
+
+    item BunkerLadder
+    {
+        Type = Normal,
+        DisplayName = Escalera de Bunker,
+        Icon = LadderSewer,
+        Weight = 2.0,
+    }
 }
