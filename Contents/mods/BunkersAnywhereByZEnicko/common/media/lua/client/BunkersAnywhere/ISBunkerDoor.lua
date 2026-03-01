@@ -211,6 +211,12 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
     playerObj:setHaloNote("Kit de Bunker: Estructura sellada con exito", 0, 255, 100, 400)
 end
 
+function BunkersAnywhere.onInstallBunkerKit(stairObj, playerObj)
+    if luautils.walkAdj(playerObj, stairObj:getSquare()) then
+        ISTimedActionQueue.add(ISInstallBunkerKitAction:new(playerObj, stairObj))
+    end
+end
+
 local function BunkersAnywhereInventoryContext(player, context, items)
     local bunkerDoorItem = nil
     local bunkerLadderItem = nil
@@ -282,7 +288,7 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
     if stairObj then
         local inv = playerObj:getInventory()
         if inv:contains("BunkerKit") then
-            context:addOption("Instalar Kit de Bunker (Sustituir Escaleras)", stairObj, BunkersAnywhere.useBunkerKit, playerObj)
+            context:addOption("Instalar Kit de Bunker (Sustituir Escaleras)", stairObj, BunkersAnywhere.onInstallBunkerKit, playerObj)
         end
     end
 end
