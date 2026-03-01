@@ -122,7 +122,6 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
             end
 
             -- NIVEL DE ARRIBA (Z+1): Tapar agujeros
-            -- getOrCreateGridSquare es más seguro para asegurar que el cuadrado exista
             local tSq = cell:getOrCreateGridSquare(currentX, currentY, topZ)
             
             if tSq then
@@ -131,8 +130,19 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
                     tSq:addFloor(woodFloorSprite)
                 end
                 
-                -- RECALCULAR VISIBILIDAD Y LUCES (Nombre técnico exacto en PZ B42)
-                tSq:RecalcAllWithNeighbours(true)
+                -- RECALCULAR VISIBILIDAD Y LUCES (Defensivo para B42)
+                -- Intentamos todas las variantes conocidas para evitar el error "call nil"
+                if tSq.RecalcAllWithNeighbours then
+                    tSq:RecalcAllWithNeighbours(true)
+                elseif tSq.RecalcAllWithNeighbor then
+                    tSq:RecalcAllWithNeighbor(true)
+                else
+                    -- Fallback seguro si los anteriores fallan
+                    tSq:RecalcProperties()
+                end
+                
+                -- Marcar como cambiado para que el motor lo refresque
+                if tSq.setSquareChanged then tSq:setSquareChanged() end
                 
                 -- Asegurarnos de que el jugador "conozca" el cuadrado para que no sea negro
                 tSq:setIsExplored(true)
@@ -155,9 +165,18 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
         local ent = topCenterSq:addTileObject(BunkersAnywhere.getEntranceSprite(topCenterSq))
         ent:getModData().bunkerType = "Entrada de Bunker"
         
-        -- Sincronizar visualmente arriba
-        topCenterSq:RecalcAllWithNeighbours(true)
+        -- Sincronizar visualmente arriba (Defensivo)
+        if topCenterSq.RecalcAllWithNeighbours then
+            topCenterSq:RecalcAllWithNeighbours(true)
+        elseif topCenterSq.RecalcAllWithNeighbor then
+            topCenterSq:RecalcAllWithNeighbor(true)
+        else
+            topCenterSq:RecalcProperties()
+        end
+        
+        if topCenterSq.setSquareChanged then topCenterSq:setSquareChanged() end
         topCenterSq:setIsExplored(true)
+        
         if isClient() then topCenterSq:transmitCompleteSquareToServer() end
     end
 
