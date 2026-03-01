@@ -270,26 +270,26 @@ end
 -- ==========================================================
 
 function BunkersAnywhere.onInstallBunkerKit(stairObj, playerObj)
-    if luautils.walkAdj(playerObj, stairObj:getSquare()) then
+    if luautils.walk(playerObj, stairObj:getSquare()) then
         ISTimedActionQueue.add(ISBunkerAction:new(playerObj, stairObj:getSquare(), 250, "Loot", "Carpentry", BunkersAnywhere.useBunkerKit, stairObj, playerObj))
     end
 end
 
 function BunkersAnywhere.onTeleport(targetObj, playerObj, newZ)
-    if luautils.walkAdj(playerObj, targetObj:getSquare()) then
+    if luautils.walk(playerObj, targetObj:getSquare()) then
         ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetObj:getSquare(), 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ))
     end
 end
 
 function BunkersAnywhere.onRemove(targetObj, playerObj, itemFullType)
-    if luautils.walkAdj(playerObj, targetObj:getSquare()) then
+    if luautils.walk(playerObj, targetObj:getSquare()) then
         ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetObj:getSquare(), 150, "Loot", "Carpentry", BunkersAnywhere.removeObject, targetObj, playerObj, itemFullType))
     end
 end
 
 function BunkersAnywhere.onPlaceObject(worldobjects, playerObj, item, objName, zOffset)
     local sq = worldobjects[1]:getSquare()
-    if luautils.walkAdj(playerObj, sq) then
+    if luautils.walk(playerObj, sq) then
         ISTimedActionQueue.add(ISBunkerAction:new(playerObj, sq, 150, "Loot", "Carpentry", BunkersAnywhere.placeObject, worldobjects, playerObj, item, objName, zOffset))
     end
 end
