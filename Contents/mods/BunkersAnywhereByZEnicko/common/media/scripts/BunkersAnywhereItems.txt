@@ -15,4 +15,12 @@ module Base
         Icon = LadderSewer,
         Weight = 2.0,
     }
+
+    item BunkerKit
+    {
+        Type = Normal,
+        DisplayName = Kit de Bunker,
+        Icon = BunkerKit,
+        Weight = 8.0,
+    }
 }
