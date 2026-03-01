@@ -34,10 +34,11 @@ function BunkersAnywhere.placeBunker(worldobjects, playerObj, item)
     local sq = playerObj:getSquare()
     if not sq then return end
     
-    -- Creamos un objeto con el sprite del búnker
-    local obj = IsoObject.new(sq, BunkersAnywhere.BunkerSprite, "BunkerEntrance")
+    -- Usamos addTileObject que es la forma estándar y segura en PZ para añadir objetos por nombre de sprite
+    local obj = sq:addTileObject(BunkersAnywhere.BunkerSprite)
+    if not obj then return end
+    
     obj:getModData().isBunker = true
-    sq:AddChild(obj)
     
     -- Transmitimos el cambio al servidor si es MP
     if isClient() then
@@ -54,7 +55,8 @@ function BunkersAnywhere.removeBunker(obj, playerObj)
     local sq = obj:getSquare()
     if not sq then return end
     
-    sq:RemoveTileObject(obj)
+    -- Usamos removeFromSquare que es más fiable
+    obj:removeFromSquare()
     playerObj:getInventory():AddItem("Base.BunkerDoor")
     playerObj:setHaloNote("Entrada de Bunker recogida", 255, 255, 0, 300)
 end
