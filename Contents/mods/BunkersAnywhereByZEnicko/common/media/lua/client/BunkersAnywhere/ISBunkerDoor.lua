@@ -215,9 +215,10 @@ end
 -- Timed Action: Instalar Kit de Búnker
 -- (Integrado aquí para evitar problemas de carga/hot-reload)
 -- ==========================================================
-require "TimedActions/ISTimedAction"
+require "TimedActions/ISBaseTimedAction"
+require "TimedActions/ISTimedActionQueue"
 
-ISInstallBunkerKitAction = ISTimedAction:derive("ISInstallBunkerKitAction");
+ISInstallBunkerKitAction = ISBaseTimedAction:derive("ISInstallBunkerKitAction");
 
 function ISInstallBunkerKitAction:isValid()
     return self.character:getInventory():contains("BunkerKit");
