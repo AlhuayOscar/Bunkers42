@@ -86,7 +86,7 @@ function BunkersAnywhere.isStair(obj)
     local spriteName = obj:getSprite():getName()
     if spriteName then
         if string.find(spriteName, "stairs") or string.find(spriteName, "escalator") or
-           string.find(spriteName, "carpintery_02_89") or 
+           string.find(spriteName, "carpentry_02_89") or 
            string.find(spriteName, "constructedobjects_01_88") or 
            string.find(spriteName, "crafted_02_106") then
             return true
@@ -101,10 +101,9 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
     local x, y, z = sq:getX(), sq:getY(), sq:getZ()
     local cell = getCell()
     local topZ = z + 1
-    local woodFloorSprite = "floors_interior_tiles_01_40" -- Suelo de madera estándar
+    local woodFloorSprite = "floors_interior_tiles_01_40"
 
     -- 1. Limpiar la estructura física de la escalera y rellenar los huecos
-    -- Escaneamos un radio de 3x3 para cubrir los 3 tiles típicos de una escalera
     for ix = -3, 3 do
         for iy = -3, 3 do
             local currentX = x + ix
@@ -125,21 +124,30 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
             -- NIVEL DE ARRIBA (Z+1): Tapar agujeros
             local tSq = cell:getGridSquare(currentX, currentY, topZ)
             
-            -- Si el cuadrado no existe (es un hueco vacío en el aire), hay que crearlo
+            -- Si el cuadrado no existe, lo creamos de forma más robusta
             if not tSq then
-                tSq = IsoGridSquare.getNew(cell, nil, currentX, currentY, topZ)
+                tSq = IsoGridSquare.new(cell, nil, currentX, currentY, topZ)
                 cell:ConnectSq(tSq)
             end
 
-            -- Si el cuadrado existe pero no tiene suelo (Floor), se lo ponemos
-            if tSq and not tSq:getFloor() then
-                -- Usamos addFloor para asegurarnos de que se registre como suelo base
-                tSq:addFloor(woodFloorSprite)
+            if tSq then
+                -- Si no hay suelo, lo añadimos
+                if not tSq:getFloor() then
+                    tSq:addFloor(woodFloorSprite)
+                end
+                
+                -- RECALCULAR PROPIEDADES (Para evitar el color negro y permitir interacción)
+                tSq:RecalcAllWithNeighbor(true)
+                
+                -- Forzar transmisión en MP
+                if isClient() then
+                    tSq:transmitCompleteSquareToServer()
+                end
             end
         end
     end
 
-    -- 2. Colocar Escalera (Ladder) abajo (exactamente donde se hizo click)
+    -- 2. Colocar Escalera (Ladder) abajo
     local ladder = sq:addTileObject(BunkersAnywhere.Sprites.Ladder)
     ladder:getModData().bunkerType = "Escalera de Bunker"
 
@@ -148,17 +156,15 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
     if topCenterSq then
         local ent = topCenterSq:addTileObject(BunkersAnywhere.getEntranceSprite(topCenterSq))
         ent:getModData().bunkerType = "Entrada de Bunker"
-    end
-
-    -- 4. Transmitir cambios al servidor (MP Balance)
-    if isClient() then
-        -- En MP, los cambios en los squares a veces requieren forzar la transmisión
-        -- Aunque addFloor suele ser suficiente
+        
+        -- Sincronizar visualmente arriba
+        topCenterSq:RecalcAllWithNeighbor(true)
+        if isClient() then topCenterSq:transmitCompleteSquareToServer() end
     end
 
     -- Consumir el Kit
     playerObj:getInventory():RemoveOneOf("Base.BunkerKit")
-    playerObj:setHaloNote("Kit de Bunker: Suelo sellado y Bunker instalado", 0, 255, 100, 400)
+    playerObj:setHaloNote("Kit de Bunker: Estructura sellada con exito", 0, 255, 100, 400)
 end
 
 local function BunkersAnywhereInventoryContext(player, context, items)
