@@ -50,7 +50,7 @@ function BunkersAnywhere.canTeleportTo(sqX, sqY, targetZ)
                 local o = objs:get(i)
                 if o:getProperties() and (o:getProperties():Is(IsoFlagType.solid) or o:getProperties():Is(IsoFlagType.solidtrans)) then
                     -- Ignorar los objetos del mismo mod u otras puertas, para no bloquear
-                    if not o:getModData().bunkerType then
+                    if not (o.getModData and o:getModData() and o:getModData().bunkerType) then
                         return false
                     end
                 end
@@ -421,9 +421,23 @@ function BunkersAnywhere.onTeleport(targetObj, playerObj, newZ)
     local targetSq = targetObj:getSquare()
     local x, y, z = targetSq:getX(), targetSq:getY(), targetSq:getZ()
     
-    -- Usamos walkAdj para caminar al tile ADYACENTE a la tapa/escalera (sin intentar pisarla) y luego interactuar.
-    if luautils.walkAdj(playerObj, targetSq) then
+    local pSq = playerObj:getCurrentSquare()
+    local sameZ = math.abs(playerObj:getZ() - z) < 0.5
+    local distX = math.abs(playerObj:getX() - (x + 0.5))
+    local distY = math.abs(playerObj:getY() - (y + 0.5))
+    local blocked = false
+    
+    if pSq and targetSq and pSq ~= targetSq then
+        blocked = pSq:isBlockedTo(targetSq)
+    end
+    
+    -- Si estamos en un tile adyacente o en el mismo, y no hay muro, interactuar directo. Si no, caminar.
+    if distX < 1.5 and distY < 1.5 and sameZ and not blocked then
         ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ, x, y))
+    else
+        if luautils.walk(playerObj, targetSq) then
+            ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ, x, y))
+        end
     end
 end
 
@@ -573,13 +587,20 @@ local function BunkersAnywhereOnKeyPressed(key)
 
     if targetObj then
         local bType = targetObj:getModData().bunkerType
+        local objSq = targetObj:getSquare()
+        local objX, objY, objZ = objSq:getX(), objSq:getY(), objSq:getZ()
+        
         if bType == "Entrada de Bunker" then
-            if BunkersAnywhere.canTeleportTo(playerObj, pZ - 1) then
-                BunkersAnywhere.onTeleport(targetObj, playerObj, pZ - 1)
+            if BunkersAnywhere.canTeleportTo(objX, objY, objZ - 1) then
+                BunkersAnywhere.onTeleport(targetObj, playerObj, objZ - 1)
+            else
+                playerObj:setHaloNote(getText("IGUI_Bunker_NoFloorTarget"), 255, 0, 0, 350)
             end
         elseif bType == "Escalera de Bunker" then
-            if BunkersAnywhere.canTeleportTo(playerObj, pZ + 1) then
-                BunkersAnywhere.onTeleport(targetObj, playerObj, pZ + 1)
+            if BunkersAnywhere.canTeleportTo(objX, objY, objZ + 1) then
+                BunkersAnywhere.onTeleport(targetObj, playerObj, objZ + 1)
+            else
+                playerObj:setHaloNote(getText("IGUI_Bunker_NoFloorTarget"), 255, 0, 0, 350)
             end
         end
     end
