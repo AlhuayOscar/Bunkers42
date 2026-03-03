@@ -420,6 +420,10 @@ end
 function BunkersAnywhere.onTeleport(targetObj, playerObj, newZ)
     local targetSq = targetObj:getSquare()
     local x, y, z = targetSq:getX(), targetSq:getY(), targetSq:getZ()
+    local bType = targetObj:getModData().bunkerType
+    
+    local destType = (bType == "Entrada de Bunker") and "Escalera de Bunker" or "Entrada de Bunker"
+    local destX, destY = BunkersAnywhere.findDestination(targetSq, newZ, destType)
     
     local pSq = playerObj:getCurrentSquare()
     local sameZ = math.abs(playerObj:getZ() - z) < 0.5
@@ -431,12 +435,19 @@ function BunkersAnywhere.onTeleport(targetObj, playerObj, newZ)
         blocked = pSq:isBlockedTo(targetSq)
     end
     
-    -- Si estamos en un tile adyacente o en el mismo, y no hay muro, interactuar directo. Si no, caminar.
-    if distX < 1.5 and distY < 1.5 and sameZ and not blocked then
-        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ, x, y))
+    -- Si estamos en un tile adyacente o en el mismo, interceptamos para no caminar
+    if distX < 1.5 and distY < 1.5 and sameZ then
+        if blocked then
+            -- Si esta bloqueado (ej: separado por pared o barandilla), simplemente salimos.
+            -- Asi presionando 'E' el personaje no saltará ni correrá hacia otra escalera.
+            return
+        end
+        playerObj:faceThisObject(targetObj)
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ, destX, destY))
     else
+        -- Desde lejos (click derecho), usamos walk normal
         if luautils.walk(playerObj, targetSq) then
-            ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ, x, y))
+            ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ, destX, destY))
         end
     end
 end
@@ -573,10 +584,15 @@ local function BunkersAnywhereOnKeyPressed(key)
                 local objects = searchSq:getObjects()
                 for i = 0, objects:size() - 1 do
                     local obj = objects:get(i)
-                    if obj:getModData().bunkerType then
-                        -- Encontramos un objeto de bunker, lo guardamos si esta suficientemente cerca
-                        targetObj = obj
-                        break
+                    if obj.getModData and type(obj.getModData) == "function" then
+                        local md = obj:getModData()
+                        if md and md.bunkerType then
+                            -- Confirmar que esten en la misma casilla o no esten separados por paredes fisicas
+                            if sq == searchSq or not sq:isBlockedTo(searchSq) then
+                                targetObj = obj
+                                break
+                            end
+                        end
                     end
                 end
             end

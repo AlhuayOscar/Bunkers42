@@ -464,11 +464,18 @@ function BunkersAnywhere.onTeleport(targetObj, playerObj, newZ)
         blocked = pSq:isBlockedTo(targetSq)
     end
     
-    -- Si estamos en un tile adyacente o en el mismo, y no hay muro, interactuar directo. Si no, caminar.
-    if distX < 1.5 and distY < 1.5 and sameZ and not blocked then
+    -- Si estamos en un tile adyacente o en el mismo, interceptamos para no caminar
+    if distX < 1.5 and distY < 1.5 and sameZ then
+        if blocked then
+            -- Si esta bloqueado (ej: separado por pared o barandilla), simplemente salimos.
+            -- Asi presionando 'E' el personaje no saltará ni correrá hacia otra escalera.
+            return
+        end
+        playerObj:faceThisObject(targetObj)
         ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ, destX, destY))
     else
-        if luautils.walkAdj(playerObj, targetSq) then
+        -- Desde lejos (click derecho), usamos walk normal
+        if luautils.walk(playerObj, targetSq) then
             ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ, destX, destY))
         end
     end
@@ -606,10 +613,15 @@ local function BunkersAnywhereOnKeyPressed(key)
                 local objects = searchSq:getObjects()
                 for i = 0, objects:size() - 1 do
                     local obj = objects:get(i)
-                    if obj:getModData().bunkerType then
-                        -- Encontramos un objeto de bunker, lo guardamos si esta suficientemente cerca
-                        targetObj = obj
-                        break
+                    if obj.getModData and type(obj.getModData) == "function" then
+                        local md = obj:getModData()
+                        if md and md.bunkerType then
+                            -- Confirmar que esten en la misma casilla o no esten separados por paredes fisicas
+                            if sq == searchSq or not sq:isBlockedTo(searchSq) then
+                                targetObj = obj
+                                break
+                            end
+                        end
                     end
                 end
             end
