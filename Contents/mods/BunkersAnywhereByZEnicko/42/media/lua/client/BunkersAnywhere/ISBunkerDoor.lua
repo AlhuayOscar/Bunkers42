@@ -20,9 +20,22 @@ function BunkersAnywhere.teleportToZ(playerObj, newZ)
     if playerObj and newZ ~= nil then
         local x = playerObj:getX()
         local y = playerObj:getY()
+        local cell = getCell()
+        local targetSq = cell:getGridSquare(math.floor(x), math.floor(y), newZ)
+        
+        -- Centramos al jugador en el tile para evitar que quede en "bordes" de escaleras
+        playerObj:setX(math.floor(x) + 0.5)
+        playerObj:setY(math.floor(y) + 0.5)
         playerObj:setZ(newZ)
-        playerObj:setX(x)
-        playerObj:setY(y)
+        
+        -- Forzamos la actualización de coordenadas "last" para evitar interpolaciones raras en MP
+        playerObj:setLx(playerObj:getX())
+        playerObj:setLy(playerObj:getY())
+        playerObj:setLz(playerObj:getZ())
+        
+        if targetSq then
+            playerObj:setCurrent(targetSq)
+        end
     end
 end
 
@@ -398,8 +411,21 @@ function BunkersAnywhere.onInstallBunkerKit(stairObj, playerObj)
 end
 
 function BunkersAnywhere.onTeleport(targetObj, playerObj, newZ)
-    if luautils.walk(playerObj, targetObj:getSquare()) then
-        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetObj:getSquare(), 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ))
+    local targetSq = targetObj:getSquare()
+    local x, y, z = targetSq:getX(), targetSq:getY(), targetSq:getZ()
+    
+    -- Si ya estamos en el mismo tile o muy cerca, evitamos el caminata forzada (luautils.walk se lía con las escaleras)
+    local dist = math.abs(playerObj:getX() - (x + 0.5)) + math.abs(playerObj:getY() - (y + 0.5))
+    local sameZ = math.abs(playerObj:getZ() - z) < 0.5
+    
+    if dist < 1.2 and sameZ then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ))
+    else
+        -- Intentamos caminar, pero PZ suele elegir el nivel superior si hay una escalera. 
+        -- Por seguridad, si el walk falla o nos manda a otro sitio, seguimos intentando interactuar si estamos cerca.
+        if luautils.walk(playerObj, targetSq) then
+            ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ))
+        end
     end
 end
 
