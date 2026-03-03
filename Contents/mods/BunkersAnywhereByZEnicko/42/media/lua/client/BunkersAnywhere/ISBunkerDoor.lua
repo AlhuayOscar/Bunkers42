@@ -26,11 +26,6 @@ function BunkersAnywhere.teleportToZ(playerObj, newZ, targetX, targetY)
         playerObj:setY(math.floor(targetY) + 0.5)
         playerObj:setZ(newZ)
         
-        -- Forzamos la actualización de coordenadas "last" para evitar interpolaciones raras en MP
-        playerObj:setLx(playerObj:getX())
-        playerObj:setLy(playerObj:getY())
-        playerObj:setLz(playerObj:getZ())
-        
         if targetSq then
             playerObj:setCurrent(targetSq)
         end
@@ -38,9 +33,10 @@ function BunkersAnywhere.teleportToZ(playerObj, newZ, targetX, targetY)
 end
 
 function BunkersAnywhere.canTeleportTo(sqX, sqY, targetZ)
+    if not sqX or not sqY or not targetZ then return false end
     if targetZ < -32 or targetZ > 7 then return false end
     
-    local square = getCell():getGridSquare(sqX, sqY, targetZ)
+    local square = getCell():getGridSquare(math.floor(sqX), math.floor(sqY), targetZ)
     
     if square then
         if square:getFloor() ~= nil or square:getRoom() ~= nil then
@@ -48,17 +44,50 @@ function BunkersAnywhere.canTeleportTo(sqX, sqY, targetZ)
             local objs = square:getObjects()
             for i = 0, objs:size() - 1 do
                 local o = objs:get(i)
-                if o:getProperties() and (o:getProperties():Is(IsoFlagType.solid) or o:getProperties():Is(IsoFlagType.solidtrans)) then
-                    -- Ignorar los objetos del mismo mod u otras puertas, para no bloquear
-                    if not (o.getModData and o:getModData() and o:getModData().bunkerType) then
+                local isBunker = false
+                if o.getModData and type(o.getModData) == "function" then
+                    local md = o:getModData()
+                    if md and md.bunkerType then isBunker = true end
+                end
+                
+                if not isBunker then
+                    local ok, solid = pcall(function()
+                        local props = o:getProperties()
+                        if props and props.Is then
+                            return props:Is(IsoFlagType.solid) or props:Is(IsoFlagType.solidtrans)
+                        end
                         return false
-                    end
+                    end)
+                    if ok and solid then return false end
                 end
             end
             return true
         end
     end
     return false
+end
+
+function BunkersAnywhere.findDestination(sq, targetZ, targetBunkerType)
+    local cell = getCell()
+    for x = sq:getX() - 3, sq:getX() + 3 do
+        for y = sq:getY() - 3, sq:getY() + 3 do
+            local searchSq = cell:getGridSquare(x, y, targetZ)
+            if searchSq then
+                local objects = searchSq:getObjects()
+                for i = 0, objects:size() - 1 do
+                    local obj = objects:get(i)
+                    if obj.getModData and type(obj.getModData) == "function" then
+                        local md = obj:getModData()
+                        if md and md.bunkerType == targetBunkerType then
+                            return x, y
+                        end
+                    end
+                end
+            end
+        end
+    end
+    -- Si no lo encuentra, bajamos/subimos por defecto
+    return sq:getX(), sq:getY()
 end
 
 -- Función para colocar objetos en el mundo
@@ -420,6 +449,10 @@ end
 function BunkersAnywhere.onTeleport(targetObj, playerObj, newZ)
     local targetSq = targetObj:getSquare()
     local x, y, z = targetSq:getX(), targetSq:getY(), targetSq:getZ()
+    local bType = targetObj:getModData().bunkerType
+    
+    local destType = (bType == "Entrada de Bunker") and "Escalera de Bunker" or "Entrada de Bunker"
+    local destX, destY = BunkersAnywhere.findDestination(targetSq, newZ, destType)
     
     local pSq = playerObj:getCurrentSquare()
     local sameZ = math.abs(playerObj:getZ() - z) < 0.5
@@ -433,10 +466,10 @@ function BunkersAnywhere.onTeleport(targetObj, playerObj, newZ)
     
     -- Si estamos en un tile adyacente o en el mismo, y no hay muro, interactuar directo. Si no, caminar.
     if distX < 1.5 and distY < 1.5 and sameZ and not blocked then
-        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ, x, y))
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ, destX, destY))
     else
-        if luautils.walk(playerObj, targetSq) then
-            ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ, x, y))
+        if luautils.walkAdj(playerObj, targetSq) then
+            ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ, destX, destY))
         end
     end
 end
@@ -591,13 +624,15 @@ local function BunkersAnywhereOnKeyPressed(key)
         local objX, objY, objZ = objSq:getX(), objSq:getY(), objSq:getZ()
         
         if bType == "Entrada de Bunker" then
-            if BunkersAnywhere.canTeleportTo(objX, objY, objZ - 1) then
+            local destX, destY = BunkersAnywhere.findDestination(objSq, objZ - 1, "Escalera de Bunker")
+            if BunkersAnywhere.canTeleportTo(destX, destY, objZ - 1) then
                 BunkersAnywhere.onTeleport(targetObj, playerObj, objZ - 1)
             else
                 playerObj:setHaloNote(getText("IGUI_Bunker_NoFloorTarget"), 255, 0, 0, 350)
             end
         elseif bType == "Escalera de Bunker" then
-            if BunkersAnywhere.canTeleportTo(objX, objY, objZ + 1) then
+            local destX, destY = BunkersAnywhere.findDestination(objSq, objZ + 1, "Entrada de Bunker")
+            if BunkersAnywhere.canTeleportTo(destX, destY, objZ + 1) then
                 BunkersAnywhere.onTeleport(targetObj, playerObj, objZ + 1)
             else
                 playerObj:setHaloNote(getText("IGUI_Bunker_NoFloorTarget"), 255, 0, 0, 350)
