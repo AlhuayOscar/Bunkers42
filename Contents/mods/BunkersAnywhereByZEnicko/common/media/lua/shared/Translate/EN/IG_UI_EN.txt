@@ -1,0 +1,7 @@
+IG_UI_EN = {
+    IGUI_Bunker_NoFloorTarget = "No floor at destination",
+    IGUI_Bunker_Installed = " installed",
+    IGUI_Bunker_ItemPickedUp = "Item picked up",
+    IGUI_Bunker_StructureSealed = "Bunker Kit: Structure successfully sealed",
+    IGUI_Bunker_KitUnpacked = "Kit unpacked",
+}

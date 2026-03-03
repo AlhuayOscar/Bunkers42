@@ -1,0 +1,5 @@
+ItemName_EN = {
+    ItemName_Base.BunkerDoor = "Bunker Entrance",
+    ItemName_Base.BunkerLadder = "Bunker Ladder",
+    ItemName_Base.BunkerKit = "Bunker Kit",
+}

@@ -1,0 +1,12 @@
+ContextMenu_ES = {
+    ContextMenu_InstallEntrance = "Instalar Entrada (Solo Bajar)",
+    ContextMenu_InstallLadder = "Instalar Escalera (Solo Subir)",
+    ContextMenu_UnpackBunkerKit = "Desempaquetar Kit de Bunker",
+    ContextMenu_EntranceDown = "Entrada (Bajar)",
+    ContextMenu_LadderUp = "Escalera (Subir)",
+    ContextMenu_GoDownBasement = "Bajar al Sotano (Z-1)",
+    ContextMenu_UninstallEntrance = "Desinstalar Entrada",
+    ContextMenu_GoUpFloor = "Subir a Planta Baja (Z+1)",
+    ContextMenu_UninstallLadder = "Desinstalar Escalera",
+    ContextMenu_InstallBunkerKit = "Instalar Kit de Bunker (Sustituir Escaleras)",
+}
