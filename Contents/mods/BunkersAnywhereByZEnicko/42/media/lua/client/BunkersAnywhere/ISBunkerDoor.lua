@@ -136,37 +136,40 @@ function BunkersAnywhere.isStair(obj)
     if not obj then return false end
     
     -- 0. Check if it's a native Stair Object (New in B42/MP)
-    if instanceof(obj, "IsoStairsObject") then return true end
+    local okIso, isNativeStair = pcall(function() return instanceof(obj, "IsoStairsObject") end)
+    if okIso and isNativeStair then return true end
 
     -- 1. Check by Sprite Name (Safest and most direct)
-    local sprite = obj:getSprite()
-    if sprite then
-        local spriteName = sprite:getName()
-        if spriteName then
-            spriteName = string.lower(spriteName)
-            if string.find(spriteName, "stairs") or string.find(spriteName, "escalator") or
-               string.find(spriteName, "carpentry_02_88") or 
-               string.find(spriteName, "carpentry_02_89") or 
-               string.find(spriteName, "carpentry_02_90") or 
-               string.find(spriteName, "constructedobjects_01_88") or 
-               string.find(spriteName, "constructedobjects_01_89") or 
-               string.find(spriteName, "constructedobjects_01_90") or
-               string.find(spriteName, "fixtures_stairs") or
-               string.find(spriteName, "crafted_02_106") or
-               string.find(spriteName, "crafted_02_107") or
-               string.find(spriteName, "crafted_02_108") or
-               string.find(spriteName, "location_shop_mall_01_6") or -- Mall escalators
-               string.find(spriteName, "location_shop_mall_01_7") or
-               string.find(spriteName, "location_shop_mall_01_8") then
-                return true
+    if type(obj.getSprite) == "function" then
+        local sprite = obj:getSprite()
+        if sprite and type(sprite.getName) == "function" then
+            local spriteName = sprite:getName()
+            if spriteName then
+                spriteName = string.lower(spriteName)
+                if string.find(spriteName, "stairs") or string.find(spriteName, "escalator") or
+                   string.find(spriteName, "carpentry_02_88") or 
+                   string.find(spriteName, "carpentry_02_89") or 
+                   string.find(spriteName, "carpentry_02_90") or 
+                   string.find(spriteName, "constructedobjects_01_88") or 
+                   string.find(spriteName, "constructedobjects_01_89") or 
+                   string.find(spriteName, "constructedobjects_01_90") or
+                   string.find(spriteName, "fixtures_stairs") or
+                   string.find(spriteName, "crafted_02_106") or
+                   string.find(spriteName, "crafted_02_107") or
+                   string.find(spriteName, "crafted_02_108") or
+                   string.find(spriteName, "location_shop_mall_01_6") or -- Mall escalators
+                   string.find(spriteName, "location_shop_mall_01_7") or
+                   string.find(spriteName, "location_shop_mall_01_8") then
+                    return true
+                end
             end
         end
     end
 
     -- 2. Check by Flags (Protected)
-    if obj.getProperties then
+    if type(obj.getProperties) == "function" then
         local props = obj:getProperties()
-        if props and props.Is then
+        if props and type(props.Is) == "function" then
             local ok, hasStair = pcall(function()
                 return props:Is(IsoFlagType.StairsW) or props:Is(IsoFlagType.StairsN)
             end)
@@ -180,19 +183,21 @@ end
 -- Función para detectar barandillas/pasamanos
 function BunkersAnywhere.isRailing(obj)
     if not obj then return false end
-    local sprite = obj:getSprite()
-    if sprite then
-        local spriteName = sprite:getName()
-        if spriteName then
-            spriteName = string.lower(spriteName)
-            -- Patrones para barandillas
-            if string.find(spriteName, "railing") or string.find(spriteName, "fence_rs") or
-               string.find(spriteName, "fixtures_railings") or
-               -- Agregamos rangos específicos solicitados
-               string.find(spriteName, "fixtures_railings_01_59") or
-               string.find(spriteName, "fixtures_railings_01_60") or
-               string.find(spriteName, "fixtures_railings_01_61") then
-                return true
+    if type(obj.getSprite) == "function" then
+        local sprite = obj:getSprite()
+        if sprite and type(sprite.getName) == "function" then
+            local spriteName = sprite:getName()
+            if spriteName then
+                spriteName = string.lower(spriteName)
+                -- Patrones para barandillas
+                if string.find(spriteName, "railing") or string.find(spriteName, "fence_rs") or
+                   string.find(spriteName, "fixtures_railings") or
+                   -- Agregamos rangos específicos solicitados
+                   string.find(spriteName, "fixtures_railings_01_59") or
+                   string.find(spriteName, "fixtures_railings_01_60") or
+                   string.find(spriteName, "fixtures_railings_01_61") then
+                    return true
+                end
             end
         end
     end
