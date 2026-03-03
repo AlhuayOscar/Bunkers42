@@ -16,16 +16,14 @@ function BunkersAnywhere.getEntranceSprite(sq)
     end
 end
 
-function BunkersAnywhere.teleportToZ(playerObj, newZ)
-    if playerObj and newZ ~= nil then
-        local x = playerObj:getX()
-        local y = playerObj:getY()
+function BunkersAnywhere.teleportToZ(playerObj, newZ, targetX, targetY)
+    if playerObj and newZ ~= nil and targetX ~= nil and targetY ~= nil then
         local cell = getCell()
-        local targetSq = cell:getGridSquare(math.floor(x), math.floor(y), newZ)
+        local targetSq = cell:getGridSquare(math.floor(targetX), math.floor(targetY), newZ)
         
-        -- Centramos al jugador en el tile para evitar que quede en "bordes" de escaleras
-        playerObj:setX(math.floor(x) + 0.5)
-        playerObj:setY(math.floor(y) + 0.5)
+        -- Centramos al jugador EXACTAMENTE en la escalera/tapa de destino
+        playerObj:setX(math.floor(targetX) + 0.5)
+        playerObj:setY(math.floor(targetY) + 0.5)
         playerObj:setZ(newZ)
         
         -- Forzamos la actualización de coordenadas "last" para evitar interpolaciones raras en MP
@@ -39,15 +37,24 @@ function BunkersAnywhere.teleportToZ(playerObj, newZ)
     end
 end
 
-function BunkersAnywhere.canTeleportTo(playerObj, targetZ)
+function BunkersAnywhere.canTeleportTo(sqX, sqY, targetZ)
     if targetZ < -32 or targetZ > 7 then return false end
     
-    local x = math.floor(playerObj:getX())
-    local y = math.floor(playerObj:getY())
-    local square = getCell():getGridSquare(x, y, targetZ)
+    local square = getCell():getGridSquare(sqX, sqY, targetZ)
     
     if square then
         if square:getFloor() ~= nil or square:getRoom() ~= nil then
+            -- Verificar si el tile destino esta libre de solidos (paredes, mueles, etc.)
+            local objs = square:getObjects()
+            for i = 0, objs:size() - 1 do
+                local o = objs:get(i)
+                if o:getProperties() and (o:getProperties():Is(IsoFlagType.solid) or o:getProperties():Is(IsoFlagType.solidtrans)) then
+                    -- Ignorar los objetos del mismo mod u otras puertas, para no bloquear
+                    if not o:getModData().bunkerType then
+                        return false
+                    end
+                end
+            end
             return true
         end
     end
@@ -60,7 +67,7 @@ function BunkersAnywhere.placeObject(worldobjects, playerObj, item, objName, zDi
     if not sq then return end
     
     local targetZ = playerObj:getZ() + zDir
-    if not BunkersAnywhere.canTeleportTo(playerObj, targetZ) then
+    if not BunkersAnywhere.canTeleportTo(sq:getX(), sq:getY(), targetZ) then
         playerObj:setHaloNote(getText("IGUI_Bunker_NoFloorTarget"), 255, 0, 0, 350)
         return
     end
@@ -414,18 +421,9 @@ function BunkersAnywhere.onTeleport(targetObj, playerObj, newZ)
     local targetSq = targetObj:getSquare()
     local x, y, z = targetSq:getX(), targetSq:getY(), targetSq:getZ()
     
-    -- Si ya estamos en el mismo tile o muy cerca, evitamos el caminata forzada (luautils.walk se lía con las escaleras)
-    local dist = math.abs(playerObj:getX() - (x + 0.5)) + math.abs(playerObj:getY() - (y + 0.5))
-    local sameZ = math.abs(playerObj:getZ() - z) < 0.5
-    
-    if dist < 1.2 and sameZ then
-        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ))
-    else
-        -- Intentamos caminar, pero PZ suele elegir el nivel superior si hay una escalera. 
-        -- Por seguridad, si el walk falla o nos manda a otro sitio, seguimos intentando interactuar si estamos cerca.
-        if luautils.walk(playerObj, targetSq) then
-            ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ))
-        end
+    -- Usamos walkAdj para caminar al tile ADYACENTE a la tapa/escalera (sin intentar pisarla) y luego interactuar.
+    if luautils.walkAdj(playerObj, targetSq) then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ, x, y))
     end
 end
 
@@ -471,12 +469,12 @@ local function BunkersAnywhereInventoryContext(player, context, items)
 
     if bunkerDoorItem then
         local option = context:addOption(getText("ContextMenu_InstallEntrance"), worldobjects, BunkersAnywhere.onPlaceObject, playerObj, bunkerDoorItem, "Entrada de Bunker", -1)
-        if not BunkersAnywhere.canTeleportTo(playerObj, playerObj:getZ() - 1) then option.notAvailable = true end
+        if not BunkersAnywhere.canTeleportTo(playerObj:getX(), playerObj:getY(), playerObj:getZ() - 1) then option.notAvailable = true end
     end
 
     if bunkerLadderItem then
         local option = context:addOption(getText("ContextMenu_InstallLadder"), worldobjects, BunkersAnywhere.onPlaceObject, playerObj, bunkerLadderItem, "Escalera de Bunker", 1)
-        if not BunkersAnywhere.canTeleportTo(playerObj, playerObj:getZ() + 1) then option.notAvailable = true end
+        if not BunkersAnywhere.canTeleportTo(playerObj:getX(), playerObj:getY(), playerObj:getZ() + 1) then option.notAvailable = true end
     end
 
     if bunkerKitItem then
@@ -516,11 +514,11 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
         
         if bType == "Entrada de Bunker" then
             local downOption = submenuCtx:addOption(getText("ContextMenu_GoDownBasement"), targetObj, BunkersAnywhere.onTeleport, playerObj, z - 1)
-            if not BunkersAnywhere.canTeleportTo(playerObj, z - 1) then downOption.notAvailable = true end
+            if not BunkersAnywhere.canTeleportTo(sq:getX(), sq:getY(), z - 1) then downOption.notAvailable = true end
             submenuCtx:addOption(getText("ContextMenu_UninstallEntrance"), targetObj, BunkersAnywhere.onRemove, playerObj, "Base.BunkerDoor")
         else
             local upOption = submenuCtx:addOption(getText("ContextMenu_GoUpFloor"), targetObj, BunkersAnywhere.onTeleport, playerObj, z + 1)
-            if not BunkersAnywhere.canTeleportTo(playerObj, z + 1) then upOption.notAvailable = true end
+            if not BunkersAnywhere.canTeleportTo(sq:getX(), sq:getY(), z + 1) then upOption.notAvailable = true end
             submenuCtx:addOption(getText("ContextMenu_UninstallLadder"), targetObj, BunkersAnywhere.onRemove, playerObj, "Base.BunkerLadder")
         end
     end
