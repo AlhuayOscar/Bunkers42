@@ -1,19 +1,381 @@
 BunkersAnywhere = BunkersAnywhere or {}
+require "ISUI/ISInventoryPaneContextMenu"
 
--- Sprites dinámicos
+-- Sprites dinÃ¡micos
 BunkersAnywhere.Sprites = {
     InsideEntrance = "street_decoration_01_15", -- Escotilla/Manhole
     OutsideEntrance = "street_decoration_01_15", -- Escotilla/Manhole
     Ladder = "location_sewer_01_32" -- Escalera de alcantarilla (B42 style)
 }
 
--- Función para elegir el sprite según el entorno
+-- FunciÃ³n para elegir el sprite segÃºn el entorno
 function BunkersAnywhere.getEntranceSprite(sq)
     if sq:isOutside() then
         return BunkersAnywhere.Sprites.OutsideEntrance
     else
         return BunkersAnywhere.Sprites.InsideEntrance
     end
+end
+
+BunkersAnywhere.InvisibleCentralGenerator = {
+    DataKey = "BunkersAnywhereInvisibleCentralGenerators",
+    SpriteName = "location_business_bank_01_67",
+    SpriteNameAlt = "location_business_bank_01_66",
+    ZLevel = -1,
+}
+
+BunkersAnywhere.ShippingMailbox = {
+    SpriteName = "rooftop_furniture_3",
+    MaxCentralDistance = 20,
+    Enabled = false,
+}
+
+function BunkersAnywhere.isInvisibleCentralSpriteName(spriteName)
+    if not spriteName then return false end
+    if spriteName == BunkersAnywhere.InvisibleCentralGenerator.SpriteName then return true end
+    if spriteName == BunkersAnywhere.InvisibleCentralGenerator.SpriteNameAlt then return true end
+    return false
+end
+
+function BunkersAnywhere.isInvisibleCentralTile(obj)
+    if not obj or not obj.getSprite then return false end
+    local sprite = obj:getSprite()
+    if not sprite or not sprite.getName then return false end
+    return BunkersAnywhere.isInvisibleCentralSpriteName(sprite:getName())
+end
+
+function BunkersAnywhere.getInvisibleGeneratorStore()
+    local data = ModData.getOrCreate(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
+    data.nodes = data.nodes or {}
+    return data
+end
+
+function BunkersAnywhere.getInvisibleGeneratorNode(store, key)
+    if not store or not store.nodes then return nil end
+    return store.nodes[key]
+end
+
+function BunkersAnywhere.linkInvisibleGeneratorNodes(store, keyA, keyB)
+    local a = BunkersAnywhere.getInvisibleGeneratorNode(store, keyA)
+    local b = BunkersAnywhere.getInvisibleGeneratorNode(store, keyB)
+    if not a or not b then return false end
+    a.links = a.links or {}
+    b.links = b.links or {}
+    a.links[keyB] = true
+    b.links[keyA] = true
+    return true
+end
+
+function BunkersAnywhere.getInvisibleGeneratorNodeKey(x, y, z)
+    return tostring(math.floor(x)) .. ":" .. tostring(math.floor(y)) .. ":" .. tostring(math.floor(z))
+end
+
+function BunkersAnywhere.isInvisibleGeneratorConnected(obj)
+    if not obj or not obj.getModData then return false end
+    local md = obj:getModData()
+    return md and md.baInvisibleGeneratorConnected == true
+end
+
+function BunkersAnywhere.getWireDistanceCost(fromSq, toX, toY)
+    local dx = fromSq:getX() - toX
+    local dy = fromSq:getY() - toY
+    return math.max(1, math.ceil(math.sqrt(dx * dx + dy * dy)))
+end
+
+function BunkersAnywhere.getNearbyContainers(playerObj)
+    local res = {}
+    if not ISInventoryPaneContextMenu or not ISInventoryPaneContextMenu.getContainers then
+        return res
+    end
+    local playerInv = playerObj:getInventory()
+    local containers = ISInventoryPaneContextMenu.getContainers(playerObj)
+    if containers and containers.size and containers.get then
+        for i = 0, containers:size() - 1 do
+            local c = containers:get(i)
+            if c and c ~= playerInv then
+                table.insert(res, c)
+            end
+        end
+    elseif containers then
+        local seen = {}
+        local i = 1
+        while containers[i] do
+            local c = containers[i]
+            if c and c ~= playerInv and not seen[c] then
+                seen[c] = true
+                table.insert(res, c)
+            end
+            i = i + 1
+        end
+        for _, c in pairs(containers) do
+            if c and c ~= playerInv and not seen[c] then
+                seen[c] = true
+                table.insert(res, c)
+            end
+        end
+    end
+    return res
+end
+
+function BunkersAnywhere.countElectricWireAvailable(playerObj)
+    local total = playerObj:getInventory():getItemCountRecurse("ElectricWire")
+    local nearby = BunkersAnywhere.getNearbyContainers(playerObj)
+    for _, c in ipairs(nearby) do
+        local items = c:getItems()
+        for i = 0, items:size() - 1 do
+            local item = items:get(i)
+            if item and item:getType() == "ElectricWire" then
+                total = total + 1
+            end
+        end
+    end
+    return total
+end
+
+function BunkersAnywhere.consumeElectricWire(playerObj, amount)
+    local remaining = amount
+    local inv = playerObj:getInventory()
+
+    while remaining > 0 and inv:containsTypeRecurse("ElectricWire") do
+        inv:RemoveOneOf("Base.ElectricWire")
+        remaining = remaining - 1
+    end
+
+    if remaining <= 0 then return true end
+
+    local nearby = BunkersAnywhere.getNearbyContainers(playerObj)
+    for _, c in ipairs(nearby) do
+        local items = c:getItems()
+        for i = items:size() - 1, 0, -1 do
+            local item = items:get(i)
+            if item and item:getType() == "ElectricWire" then
+                if c.DoRemoveItem then
+                    c:DoRemoveItem(item)
+                else
+                    c:Remove(item)
+                end
+                remaining = remaining - 1
+                if remaining <= 0 then
+                    return true
+                end
+            end
+        end
+    end
+
+    return remaining <= 0
+end
+
+function BunkersAnywhere.connectInvisibleGeneratorCentral(centralObj, playerObj)
+    local sq = centralObj and centralObj:getSquare()
+    if not sq then return end
+    if sq:getZ() ~= BunkersAnywhere.InvisibleCentralGenerator.ZLevel then
+        playerObj:setHaloNote(getText("IGUI_Bunker_CentralGeneratorOnlyBasement"), 255, 120, 0, 350)
+        return
+    end
+
+    if BunkersAnywhere.isInvisibleGeneratorConnected(centralObj) then
+        playerObj:setHaloNote(getText("IGUI_Bunker_CentralGeneratorAlreadyConnected"), 240, 240, 0, 300)
+        return
+    end
+
+    local md = centralObj:getModData()
+    md.baInvisibleGeneratorConnected = true
+    md.baInvisibleGeneratorOn = true
+    if centralObj.transmitModData then
+        centralObj:transmitModData()
+    end
+
+    local store = BunkersAnywhere.getInvisibleGeneratorStore()
+    local key = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
+    store.nodes[key] = store.nodes[key] or { x = sq:getX(), y = sq:getY(), z = sq:getZ(), active = true, links = {} }
+    store.nodes[key].active = true
+    if ModData.transmit then
+        ModData.transmit(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
+    end
+
+    if sendClientCommand then
+        sendClientCommand("BunkersAnywhere", "ConnectInvisibleGeneratorCentral", {
+            x = sq:getX(),
+            y = sq:getY(),
+            z = sq:getZ(),
+        })
+    end
+
+    playerObj:setHaloNote(getText("IGUI_Bunker_CentralGeneratorConnected"), 0, 255, 100, 350)
+end
+
+function BunkersAnywhere.connectInvisibleGeneratorToOtherCentral(centralObj, playerObj, targetX, targetY, targetZ)
+    local sq = centralObj and centralObj:getSquare()
+    if not sq then return end
+    if targetZ ~= BunkersAnywhere.InvisibleCentralGenerator.ZLevel then return end
+
+    local store = BunkersAnywhere.getInvisibleGeneratorStore()
+    local keyA = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
+    local keyB = BunkersAnywhere.getInvisibleGeneratorNodeKey(targetX, targetY, targetZ)
+    local nodeA = store.nodes and store.nodes[keyA] or nil
+    if nodeA and nodeA.links and nodeA.links[keyB] == true then
+        playerObj:setHaloNote(getText("IGUI_Bunker_CentralAlreadyLinked"), 240, 220, 80, 350)
+        return
+    end
+
+    local need = BunkersAnywhere.getWireDistanceCost(sq, targetX, targetY)
+    local available = BunkersAnywhere.countElectricWireAvailable(playerObj)
+    if available < need then
+        playerObj:setHaloNote(getText("IGUI_Bunker_CentralNeedWire", tostring(need), tostring(available)), 255, 80, 80, 400)
+        return
+    end
+
+    if not BunkersAnywhere.consumeElectricWire(playerObj, need) then
+        playerObj:setHaloNote(getText("IGUI_Bunker_CentralNeedWire", tostring(need), tostring(available)), 255, 80, 80, 400)
+        return
+    end
+
+    BunkersAnywhere.linkInvisibleGeneratorNodes(store, keyA, keyB)
+    if ModData.transmit then
+        ModData.transmit(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
+    end
+    if sendClientCommand then
+        sendClientCommand("BunkersAnywhere", "LinkInvisibleGeneratorCentrals", {
+            ax = sq:getX(), ay = sq:getY(), az = sq:getZ(),
+            bx = targetX, by = targetY, bz = targetZ,
+        })
+    end
+
+    playerObj:setHaloNote(getText("IGUI_Bunker_CentralLinkedTo", tostring(targetX), tostring(targetY), tostring(targetZ)), 0, 220, 255, 400)
+end
+
+function BunkersAnywhere.isShippingMailboxTile(obj)
+    if not BunkersAnywhere.ShippingMailbox.Enabled then return false end
+    if not obj or not obj.getSprite then return false end
+    local sprite = obj:getSprite()
+    if not sprite or not sprite.getName then return false end
+    local name = sprite:getName()
+    if name == BunkersAnywhere.ShippingMailbox.SpriteName then return true end
+    return string.match(name or "", "^rooftop_furniture_.*_3$") ~= nil
+end
+
+function BunkersAnywhere.findNearestActiveCentralNodeKeyFromSquare(sq)
+    if not sq then return nil end
+    local store = BunkersAnywhere.getInvisibleGeneratorStore()
+    local bestKey, bestDist = nil, 999999
+    for key, node in pairs(store.nodes) do
+        if node and node.active and node.z == sq:getZ() then
+            local dx = node.x - sq:getX()
+            local dy = node.y - sq:getY()
+            local dist = math.sqrt(dx * dx + dy * dy)
+            if dist <= BunkersAnywhere.ShippingMailbox.MaxCentralDistance and dist < bestDist then
+                bestKey = key
+                bestDist = dist
+            end
+        end
+    end
+    return bestKey
+end
+
+function BunkersAnywhere.findNearbyActiveMailbox(playerObj, radius)
+    local sq = playerObj and playerObj:getSquare()
+    if not sq then return nil end
+    local cell = getCell()
+    local px, py, pz = sq:getX(), sq:getY(), sq:getZ()
+    local r = radius or 1
+    for x = px - r, px + r do
+        for y = py - r, py + r do
+            local s = cell:getGridSquare(x, y, pz)
+            if s then
+                local objs = s:getObjects()
+                for i = 0, objs:size() - 1 do
+                    local o = objs:get(i)
+                    if BunkersAnywhere.isShippingMailboxTile(o) and o.getModData then
+                        local md = o:getModData()
+                        if md and md.baShippingMailboxActive then
+                            return o
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+function BunkersAnywhere.activateShippingMailbox(mailObj, playerObj)
+    local sq = mailObj and mailObj:getSquare()
+    if not sq then return end
+    local centralKey = BunkersAnywhere.findNearestActiveCentralNodeKeyFromSquare(sq)
+    if not centralKey then
+        playerObj:setHaloNote(getText("IGUI_Bunker_MailNoCentralNearby"), 255, 80, 80, 400)
+        return
+    end
+    if sendClientCommand then
+        sendClientCommand("BunkersAnywhere", "ActivateShippingMailbox", { x = sq:getX(), y = sq:getY(), z = sq:getZ() })
+    end
+    playerObj:setHaloNote(getText("IGUI_Bunker_MailActivated"), 0, 255, 100, 350)
+end
+
+function BunkersAnywhere.sendShippingMailbox(mailObj, playerObj, targetX, targetY, targetZ)
+    local sq = mailObj and mailObj:getSquare()
+    if not sq then return end
+    if sendClientCommand then
+        sendClientCommand("BunkersAnywhere", "SendShippingMailboxToCentral", {
+            x = sq:getX(), y = sq:getY(), z = sq:getZ(),
+            tx = targetX, ty = targetY, tz = targetZ,
+        })
+    end
+    playerObj:setHaloNote(getText("IGUI_Bunker_MailSentTo", tostring(targetX), tostring(targetY), tostring(targetZ)), 80, 220, 255, 350)
+end
+
+function BunkersAnywhere.withdrawShippingMailbox(mailObj, playerObj)
+    local sq = mailObj and mailObj:getSquare()
+    if not sq then return end
+    if sendClientCommand then
+        sendClientCommand("BunkersAnywhere", "WithdrawShippingMailbox", { x = sq:getX(), y = sq:getY(), z = sq:getZ() })
+    end
+end
+
+function BunkersAnywhere.setInvisibleGeneratorCentralState(centralObj, playerObj, wantOn)
+    local sq = centralObj and centralObj:getSquare()
+    if not sq then return end
+    if sq:getZ() ~= BunkersAnywhere.InvisibleCentralGenerator.ZLevel then return end
+
+    local store = BunkersAnywhere.getInvisibleGeneratorStore()
+    local key = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
+    local node = store.nodes and store.nodes[key] or nil
+    if not node then
+        playerObj:setHaloNote(getText("IGUI_Bunker_CentralNeedLinkFirst"), 255, 120, 0, 350)
+        return
+    end
+    local current = node and node.active == true or false
+    if current == wantOn then
+        local key = wantOn and "IGUI_Bunker_CentralGeneratorAlreadyOn" or "IGUI_Bunker_CentralGeneratorAlreadyOff"
+        playerObj:setHaloNote(getText(key), 240, 240, 0, 300)
+        return
+    end
+
+    local md = centralObj:getModData()
+    md.baInvisibleGeneratorLocalOn = wantOn
+    if centralObj.transmitModData then
+        centralObj:transmitModData()
+    end
+
+    if store.nodes[key] then
+        store.nodes[key].active = wantOn
+        if ModData.transmit then
+            ModData.transmit(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
+        end
+    end
+
+    if sendClientCommand then
+        sendClientCommand("BunkersAnywhere", "ToggleInvisibleGeneratorCentral", {
+            x = sq:getX(),
+            y = sq:getY(),
+            z = sq:getZ(),
+            on = wantOn and true or false,
+        })
+    end
+
+    local textKey = wantOn and "IGUI_Bunker_CentralGeneratorOn" or "IGUI_Bunker_CentralGeneratorOff"
+    local r, g, b = wantOn and 0 or 255, wantOn and 255 or 180, wantOn and 100 or 120
+    playerObj:setHaloNote(getText(textKey), r, g, b, 350)
 end
 
 function BunkersAnywhere.teleportToZ(playerObj, newZ, targetX, targetY)
@@ -26,7 +388,7 @@ function BunkersAnywhere.teleportToZ(playerObj, newZ, targetX, targetY)
         playerObj:setY(math.floor(targetY) + 0.5)
         playerObj:setZ(newZ)
         
-        -- Forzamos la actualización de coordenadas "last" para evitar interpolaciones raras en MP
+        -- Forzamos la actualizaciÃ³n de coordenadas "last" para evitar interpolaciones raras en MP
         playerObj:setLx(playerObj:getX())
         playerObj:setLy(playerObj:getY())
         playerObj:setLz(playerObj:getZ())
@@ -61,7 +423,7 @@ function BunkersAnywhere.canTeleportTo(sqX, sqY, targetZ)
     return false
 end
 
--- Función para colocar objetos en el mundo
+-- FunciÃ³n para colocar objetos en el mundo
 function BunkersAnywhere.placeObject(worldobjects, playerObj, item, objName, zDir)
     local sq = playerObj:getSquare()
     if not sq then return end
@@ -88,21 +450,21 @@ function BunkersAnywhere.placeObject(worldobjects, playerObj, item, objName, zDi
     playerObj:setHaloNote(itemName .. getText("IGUI_Bunker_Installed"), 0, 255, 0, 300)
 end
 
--- Función para desinstalar
+-- FunciÃ³n para desinstalar
 function BunkersAnywhere.removeObject(obj, playerObj, itemFullType)
     local sq = obj:getSquare()
     if not sq then return end
     
     obj:removeFromSquare()
     
-    -- Si al quitar el objeto no queda suelo, ponemos tablones (evita caer al vacío)
+    -- Si al quitar el objeto no queda suelo, ponemos tablones (evita caer al vacÃ­o)
     BunkersAnywhere.ensureFloor(sq)
 
     playerObj:getInventory():AddItem(itemFullType)
     playerObj:setHaloNote(getText("IGUI_Bunker_ItemPickedUp"), 200, 200, 200, 300)
 end
 
--- Función para detectar si un objeto es una escalera (por flags o nombre de sprite)
+-- FunciÃ³n para detectar si un objeto es una escalera (por flags o nombre de sprite)
 function BunkersAnywhere.isStair(obj)
     if not obj then return false end
     
@@ -152,7 +514,7 @@ function BunkersAnywhere.isStair(obj)
 end
 
 
--- Función para detectar barandillas/pasamanos
+-- FunciÃ³n para detectar barandillas/pasamanos
 function BunkersAnywhere.isRailing(obj)
     if not obj then return false end
     if type(obj.getSprite) == "function" then
@@ -164,7 +526,7 @@ function BunkersAnywhere.isRailing(obj)
                 -- Patrones para barandillas
                 if string.find(spriteName, "railing") or string.find(spriteName, "fence_rs") or
                    string.find(spriteName, "fixtures_railings") or
-                   -- Agregamos rangos específicos solicitados
+                   -- Agregamos rangos especÃ­ficos solicitados
                    string.find(spriteName, "fixtures_railings_01_59") or
                    string.find(spriteName, "fixtures_railings_01_60") or
                    string.find(spriteName, "fixtures_railings_01_61") then
@@ -176,13 +538,13 @@ function BunkersAnywhere.isRailing(obj)
     return false
 end
 
--- FUNCIÓN: Asegurar que una casilla tenga suelo (y guardarla permanentemente)
+-- FUNCIÃ“N: Asegurar que una casilla tenga suelo (y guardarla permanentemente)
 function BunkersAnywhere.ensureFloor(sq, floorSprite)
     if not sq then return end
     
     local spriteToUse = floorSprite or "carpentry_02_57"
     
-    -- 1. Si no hay suelo, lo añadimos
+    -- 1. Si no hay suelo, lo aÃ±adimos
     if not sq:getFloor() then
         local newFloor = sq:addFloor(spriteToUse)
         if isClient() and newFloor then
@@ -204,7 +566,7 @@ function BunkersAnywhere.ensureFloor(sq, floorSprite)
     if sq.setSquareChanged then sq:setSquareChanged() end
     if sq.flagForHotSave then sq:flagForHotSave() end
     
-    -- 4. Transmisión segura en Multijugador
+    -- 4. TransmisiÃ³n segura en Multijugador
     if isClient() then
         if sq.transmitCompleteSquareToServer then
             sq:transmitCompleteSquareToServer()
@@ -212,7 +574,7 @@ function BunkersAnywhere.ensureFloor(sq, floorSprite)
     end
 end
 
--- FUNCIÓN: Usar el Bunker Kit en escaleras
+-- FUNCIÃ“N: Usar el Bunker Kit en escaleras
 function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
     local sq = stairObj:getSquare()
     local x, y, z = sq:getX(), sq:getY(), sq:getZ()
@@ -290,7 +652,7 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
             end
             
             if tSq then
-                -- Si no hay suelo, lo añadimos y sincronizamos
+                -- Si no hay suelo, lo aÃ±adimos y sincronizamos
                 BunkersAnywhere.ensureFloor(tSq, woodFloorSprite)
             end
         end
@@ -349,7 +711,7 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
     playerObj:setHaloNote(getText("IGUI_Bunker_StructureSealed"), 0, 255, 100, 400)
 end
 
--- FUNCIÓN: Desempaquetar el Kit
+-- FUNCIÃ“N: Desempaquetar el Kit
 function BunkersAnywhere.unpackBunkerKit(kitItem, playerObj)
     local inv = playerObj:getInventory()
     inv:Remove(kitItem)
@@ -360,7 +722,7 @@ function BunkersAnywhere.unpackBunkerKit(kitItem, playerObj)
 end
 
 -- ==========================================================
--- Timed Action: Acción Genérica del Bunker (Instalar/Subir/Bajar)
+-- Timed Action: AcciÃ³n GenÃ©rica del Bunker (Instalar/Subir/Bajar)
 -- ==========================================================
 require "TimedActions/ISBaseTimedAction"
 require "TimedActions/ISTimedActionQueue"
@@ -414,7 +776,7 @@ function ISBunkerAction:new(character, targetSq, time, anim, sound, callback, ar
 end
 
 -- ==========================================================
--- Wrappers para forzar TimedActions en los Menús
+-- Wrappers para forzar TimedActions en los MenÃºs
 -- ==========================================================
 
 function BunkersAnywhere.onInstallBunkerKit(stairObj, playerObj)
@@ -445,7 +807,7 @@ function BunkersAnywhere.onTeleport(targetObj, playerObj, newZ)
     if distX < 1.5 and distY < 1.5 and sameZ then
         if blocked then
             -- Si esta bloqueado (ej: separado por pared o barandilla), simplemente salimos.
-            -- Asi presionando 'E' el personaje no saltará ni correrá hacia otra escalera.
+            -- Asi presionando 'E' el personaje no saltarÃ¡ ni correrÃ¡ hacia otra escalera.
             return
         end
         playerObj:faceThisObject(targetObj)
@@ -473,6 +835,100 @@ end
 
 function BunkersAnywhere.onUnpackBunkerKit(kitItem, playerObj)
     ISTimedActionQueue.add(ISBunkerAction:new(playerObj, playerObj:getSquare(), 100, "Loot", "HammerClick", BunkersAnywhere.unpackBunkerKit, kitItem, playerObj))
+end
+
+function BunkersAnywhere.onConnectInvisibleGeneratorCentral(centralObj, playerObj)
+    if luautils.walk(playerObj, centralObj:getSquare()) then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, centralObj:getSquare(), 120, "Loot", "LightSwitch", BunkersAnywhere.connectInvisibleGeneratorCentral, centralObj, playerObj))
+    end
+end
+
+function BunkersAnywhere.onTurnOnInvisibleGeneratorCentral(centralObj, playerObj)
+    if luautils.walk(playerObj, centralObj:getSquare()) then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, centralObj:getSquare(), 70, "Loot", "LightSwitch", BunkersAnywhere.setInvisibleGeneratorCentralState, centralObj, playerObj, true))
+    end
+end
+
+function BunkersAnywhere.onTurnOffInvisibleGeneratorCentral(centralObj, playerObj)
+    if luautils.walk(playerObj, centralObj:getSquare()) then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, centralObj:getSquare(), 70, "Loot", "LightSwitch", BunkersAnywhere.setInvisibleGeneratorCentralState, centralObj, playerObj, false))
+    end
+end
+
+function BunkersAnywhere.onConnectInvisibleGeneratorToOtherCentral(centralObj, playerObj, targetX, targetY, targetZ)
+    if luautils.walk(playerObj, centralObj:getSquare()) then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, centralObj:getSquare(), 180, "Loot", "LightSwitch", BunkersAnywhere.connectInvisibleGeneratorToOtherCentral, centralObj, playerObj, targetX, targetY, targetZ))
+    end
+end
+
+function BunkersAnywhere.onActivateShippingMailbox(mailObj, playerObj)
+    if luautils.walk(playerObj, mailObj:getSquare()) then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, mailObj:getSquare(), 120, "Loot", "LightSwitch", BunkersAnywhere.activateShippingMailbox, mailObj, playerObj))
+    end
+end
+
+function BunkersAnywhere.onSendShippingMailbox(mailObj, playerObj, targetX, targetY, targetZ)
+    if luautils.walk(playerObj, mailObj:getSquare()) then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, mailObj:getSquare(), 130, "Loot", "LightSwitch", BunkersAnywhere.sendShippingMailbox, mailObj, playerObj, targetX, targetY, targetZ))
+    end
+end
+
+function BunkersAnywhere.onWithdrawShippingMailbox(mailObj, playerObj)
+    if luautils.walk(playerObj, mailObj:getSquare()) then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, mailObj:getSquare(), 80, "Loot", "LightSwitch", BunkersAnywhere.withdrawShippingMailbox, mailObj, playerObj))
+    end
+end
+
+function BunkersAnywhere.depositSelectedItemsToMailbox(items, playerObj, mailObj)
+    if not mailObj or not mailObj.getModData then return end
+    local md = mailObj:getModData()
+    if not (md and md.baShippingMailboxActive) then return end
+
+    local payload = {}
+    local payloadCount = 0
+    local inv = playerObj:getInventory()
+
+    for _, itemGroup in ipairs(items) do
+        if instanceof(itemGroup, "InventoryItem") then
+            local item = itemGroup
+            payload[item:getFullType()] = (payload[item:getFullType()] or 0) + 1
+            payloadCount = payloadCount + 1
+        else
+            for _, item in ipairs(itemGroup.items) do
+                payload[item:getFullType()] = (payload[item:getFullType()] or 0) + 1
+                payloadCount = payloadCount + 1
+            end
+        end
+    end
+
+    local capacity = tonumber(md.baShippingMailboxCapacity) or 100
+    local current = tonumber(md.baShippingMailboxCount) or 0
+    if current + payloadCount > capacity then
+        playerObj:setHaloNote(getText("IGUI_Bunker_MailboxFull", tostring(capacity)), 255, 80, 80, 350)
+        return
+    end
+
+    for _, itemGroup in ipairs(items) do
+        if instanceof(itemGroup, "InventoryItem") then
+            inv:Remove(itemGroup)
+        else
+            for _, item in ipairs(itemGroup.items) do
+                inv:Remove(item)
+            end
+        end
+    end
+
+    local sq = mailObj:getSquare()
+    if sendClientCommand then
+        sendClientCommand("BunkersAnywhere", "DepositShippingMailbox", {
+            x = sq:getX(), y = sq:getY(), z = sq:getZ(), items = payload
+        })
+    end
+    playerObj:setHaloNote(getText("IGUI_Bunker_MailDeposited"), 0, 220, 255, 300)
+end
+
+function BunkersAnywhere.onDepositSelectedItemsToMailbox(items, playerObj, mailObj)
+    ISTimedActionQueue.add(ISBunkerAction:new(playerObj, playerObj:getSquare(), 70, "Loot", nil, BunkersAnywhere.depositSelectedItemsToMailbox, items, playerObj, mailObj))
 end
 
 -- ==========================================================
@@ -511,6 +967,11 @@ local function BunkersAnywhereInventoryContext(player, context, items)
     if bunkerKitItem then
         context:addOption(getText("ContextMenu_UnpackBunkerKit"), bunkerKitItem, BunkersAnywhere.onUnpackBunkerKit, playerObj)
     end
+
+    local mailObj = BunkersAnywhere.findNearbyActiveMailbox(playerObj, 1)
+    if mailObj then
+        context:addOption(getText("ContextMenu_DepositToShippingMailbox"), items, BunkersAnywhere.onDepositSelectedItemsToMailbox, playerObj, mailObj)
+    end
 end
 
 Events.OnFillInventoryObjectContextMenu.Add(BunkersAnywhereInventoryContext)
@@ -522,9 +983,17 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
     
     local targetObj = nil
     local stairObj = nil
+    local centralObj = nil
+    local mailObj = nil
     local objects = sq:getObjects()
     for i = 0, objects:size() - 1 do
         local obj = objects:get(i)
+        if not centralObj and BunkersAnywhere.isInvisibleCentralTile(obj) then
+            centralObj = obj
+        end
+        if not mailObj and BunkersAnywhere.isShippingMailboxTile(obj) then
+            mailObj = obj
+        end
         if obj and obj.getModData then
             local modData = obj:getModData()
             if modData and modData.bunkerType then
@@ -535,7 +1004,7 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
         end
     end
 
-    -- Menú para objetos del MOD
+    -- MenÃº para objetos del MOD
     if targetObj then
         local bType = targetObj:getModData().bunkerType
         local optionName = (bType == "Entrada de Bunker") and getText("ContextMenu_EntranceDown") or getText("ContextMenu_LadderUp")
@@ -554,12 +1023,123 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
         end
     end
 
-    -- Menú para el BUNKER KIT (sobre escaleras vanilla)
+    -- MenÃº para el BUNKER KIT (sobre escaleras vanilla)
     if stairObj then
         local inv = playerObj:getInventory()
         if inv:containsWithModule("Base.BunkerKit") then
             context:addOption(getText("ContextMenu_InstallBunkerKit"), stairObj, BunkersAnywhere.onInstallBunkerKit, playerObj)
         end
+    end
+
+    if centralObj then
+        local isConnected = BunkersAnywhere.isInvisibleGeneratorConnected(centralObj)
+        if not isConnected then
+            context:addOption(getText("ContextMenu_ConnectInvisibleGeneratorCentral"), centralObj, BunkersAnywhere.onConnectInvisibleGeneratorCentral, playerObj)
+        end
+
+        local sqCentral = centralObj:getSquare()
+        local store = BunkersAnywhere.getInvisibleGeneratorStore()
+        local currentKey = BunkersAnywhere.getInvisibleGeneratorNodeKey(sqCentral:getX(), sqCentral:getY(), sqCentral:getZ())
+        local currentNode = store.nodes and store.nodes[currentKey] or nil
+        local connectSub = nil
+        local connectSubCtx = nil
+        for _, node in pairs(store.nodes) do
+            if node and node.z == BunkersAnywhere.InvisibleCentralGenerator.ZLevel then
+                if not (node.x == sqCentral:getX() and node.y == sqCentral:getY() and node.z == sqCentral:getZ()) then
+                    local targetKey = BunkersAnywhere.getInvisibleGeneratorNodeKey(node.x, node.y, node.z)
+                    local alreadyLinked = currentNode and currentNode.links and currentNode.links[targetKey] == true
+                    if not alreadyLinked then
+                    if not connectSub then
+                        connectSub = context:addOption(getText("ContextMenu_ConnectToOtherCentral"))
+                        connectSubCtx = ISContextMenu:getNew(context)
+                        context:addSubMenu(connectSub, connectSubCtx)
+                    end
+
+                    local need = BunkersAnywhere.getWireDistanceCost(sqCentral, node.x, node.y)
+                    local have = BunkersAnywhere.countElectricWireAvailable(playerObj)
+                    local label = getText("ContextMenu_ConnectToOtherCentralCoord", tostring(node.x), tostring(node.y), tostring(node.z))
+                    local opt = connectSubCtx:addOption(label, centralObj, BunkersAnywhere.onConnectInvisibleGeneratorToOtherCentral, playerObj, node.x, node.y, node.z)
+
+                    opt.toolTip = ISToolTip:new()
+                    opt.toolTip:initialise()
+                    opt.toolTip:setVisible(false)
+                    opt.toolTip.description = getText("IGUI_Bunker_CentralNeedWire", tostring(need), tostring(have))
+                    if have < need then
+                        opt.notAvailable = true
+                    end
+                    end
+                end
+            end
+        end
+
+        local md = centralObj:getModData()
+        local netOn = md and md.baInvisibleGeneratorOn == true
+        local localOn = md and md.baInvisibleGeneratorLocalOn == true
+        local providers = md and md.baInvisibleGeneratorProviderText or nil
+        if providers and providers ~= "" then
+            local depLabel = getText("ContextMenu_CentralDependsOn", tostring(providers))
+            local depOpt = context:addOption(depLabel)
+            depOpt.notAvailable = true
+        end
+
+        local localNode = store.nodes and store.nodes[currentKey] or nil
+        if localNode then
+            local isOn = localNode.active == true
+            if isOn then
+                context:addOption(getText("ContextMenu_TurnOffInvisibleGeneratorCentral"), centralObj, BunkersAnywhere.onTurnOffInvisibleGeneratorCentral, playerObj)
+            else
+                context:addOption(getText("ContextMenu_TurnOnInvisibleGeneratorCentral"), centralObj, BunkersAnywhere.onTurnOnInvisibleGeneratorCentral, playerObj)
+            end
+        end
+    end
+
+    if mailObj and mailObj.getModData then
+        local mdMail = mailObj:getModData()
+        if not (mdMail and mdMail.baShippingMailboxActive) then
+            local nearKey = BunkersAnywhere.findNearestActiveCentralNodeKeyFromSquare(mailObj:getSquare())
+            local option = context:addOption(getText("ContextMenu_ActivateShippingMailbox"), mailObj, BunkersAnywhere.onActivateShippingMailbox, playerObj)
+            if not nearKey then option.notAvailable = true end
+        else
+            context:addOption(getText("ContextMenu_WithdrawFromShippingMailbox"), mailObj, BunkersAnywhere.onWithdrawShippingMailbox, playerObj)
+
+            local cKey = mdMail.baShippingCentralKey
+            local store = BunkersAnywhere.getInvisibleGeneratorStore()
+            local cNode = cKey and store.nodes[cKey] or nil
+            if cNode and cNode.links then
+                local sub = context:addOption(getText("ContextMenu_SendShippingMailbox"))
+                local subCtx = ISContextMenu:getNew(context)
+                context:addSubMenu(sub, subCtx)
+                for linkedKey, enabled in pairs(cNode.links) do
+                    if enabled and store.nodes[linkedKey] then
+                        local ln = store.nodes[linkedKey]
+                        local label = getText("ContextMenu_SendShippingMailboxTo", tostring(ln.x), tostring(ln.y), tostring(ln.z))
+                        subCtx:addOption(label, mailObj, BunkersAnywhere.onSendShippingMailbox, playerObj, ln.x, ln.y, ln.z)
+                    end
+                end
+            end
+        end
+    end
+
+    local hasOwnedInvisibleGenerator = false
+    for _, wo in ipairs(worldobjects) do
+        if wo and instanceof(wo, "IsoGenerator") and wo.getModData then
+            local gmd = wo:getModData()
+            if gmd and gmd.baInvisibleGeneratorOwned then
+                hasOwnedInvisibleGenerator = true
+                break
+            end
+        end
+    end
+
+    if hasOwnedInvisibleGenerator then
+        context:removeOptionByName(getText("ContextMenu_Generator"))
+        context:removeOptionByName(getText("ContextMenu_GeneratorInfo"))
+        context:removeOptionByName(getText("ContextMenu_GeneratorPlug"))
+        context:removeOptionByName(getText("ContextMenu_GeneratorUnplug"))
+        context:removeOptionByName(getText("ContextMenu_GeneratorAddFuel"))
+        context:removeOptionByName(getText("ContextMenu_GeneratorFix"))
+        context:removeOptionByName(getText("ContextMenu_GeneratorTake"))
+        context:removeOptionByName(getText("ContextMenu_Vehicle_PlugGenerator"))
     end
 end
 
