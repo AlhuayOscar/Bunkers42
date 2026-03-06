@@ -340,18 +340,19 @@ function BunkersAnywhere.setInvisibleGeneratorCentralState(centralObj, playerObj
     local store = BunkersAnywhere.getInvisibleGeneratorStore()
     local key = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
     local node = store.nodes and store.nodes[key] or nil
-    if not node then
+    local md = centralObj:getModData()
+    local isConnected = (node ~= nil) or (md and md.baInvisibleGeneratorConnected == true)
+    if not isConnected then
         playerObj:setHaloNote(getText("IGUI_Bunker_CentralNeedLinkFirst"), 255, 120, 0, 350)
         return
     end
-    local current = node and node.active == true or false
+    local current = (node and node.active == true) or (md and md.baInvisibleGeneratorLocalOn == true) or false
     if current == wantOn then
         local key = wantOn and "IGUI_Bunker_CentralGeneratorAlreadyOn" or "IGUI_Bunker_CentralGeneratorAlreadyOff"
         playerObj:setHaloNote(getText(key), 240, 240, 0, 300)
         return
     end
 
-    local md = centralObj:getModData()
     md.baInvisibleGeneratorLocalOn = wantOn
     if centralObj.transmitModData then
         centralObj:transmitModData()
@@ -1032,15 +1033,16 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
     end
 
     if centralObj then
-        local isConnected = BunkersAnywhere.isInvisibleGeneratorConnected(centralObj)
-        if not isConnected then
-            context:addOption(getText("ContextMenu_ConnectInvisibleGeneratorCentral"), centralObj, BunkersAnywhere.onConnectInvisibleGeneratorCentral, playerObj)
-        end
-
+        local md = centralObj:getModData()
         local sqCentral = centralObj:getSquare()
         local store = BunkersAnywhere.getInvisibleGeneratorStore()
         local currentKey = BunkersAnywhere.getInvisibleGeneratorNodeKey(sqCentral:getX(), sqCentral:getY(), sqCentral:getZ())
         local currentNode = store.nodes and store.nodes[currentKey] or nil
+        local isConnected = (currentNode ~= nil) or (md and md.baInvisibleGeneratorConnected == true)
+        if not isConnected then
+            context:addOption(getText("ContextMenu_ConnectInvisibleGeneratorCentral"), centralObj, BunkersAnywhere.onConnectInvisibleGeneratorCentral, playerObj)
+        end
+
         local connectSub = nil
         local connectSubCtx = nil
         for _, node in pairs(store.nodes) do
@@ -1072,7 +1074,6 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
             end
         end
 
-        local md = centralObj:getModData()
         local netOn = md and md.baInvisibleGeneratorOn == true
         local localOn = md and md.baInvisibleGeneratorLocalOn == true
         local providers = md and md.baInvisibleGeneratorProviderText or nil
@@ -1082,9 +1083,8 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
             depOpt.notAvailable = true
         end
 
-        local localNode = store.nodes and store.nodes[currentKey] or nil
-        if localNode then
-            local isOn = localNode.active == true
+        if isConnected then
+            local isOn = (currentNode and currentNode.active == true) or localOn
             if isOn then
                 context:addOption(getText("ContextMenu_TurnOffInvisibleGeneratorCentral"), centralObj, BunkersAnywhere.onTurnOffInvisibleGeneratorCentral, playerObj)
             else

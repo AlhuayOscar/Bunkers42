@@ -109,9 +109,6 @@ local function ensureInvisibleGenerator(square, wantOn)
         item:setCondition(100)
         item:getModData().fuel = 100
         generator = IsoGenerator.new(item, getCell(), square)
-        if generator and generator.transmitCompleteItemToClients then
-            generator:transmitCompleteItemToClients()
-        end
     end
     if not generator then return end
 
@@ -125,6 +122,9 @@ local function ensureInvisibleGenerator(square, wantOn)
         generator:setSurroundingElectricity()
     end
 
+    pcall(function() generator:setAlpha(0.0) end)
+    pcall(function() generator:setTargetAlpha(0, 0.0) end)
+    pcall(function() generator:setTargetAlpha(1, 0.0) end)
     if generator.setSprite then
         generator:setSprite(nil)
     end
