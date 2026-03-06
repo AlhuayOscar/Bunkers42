@@ -4,4 +4,11 @@ IG_UI_ES = {
     IGUI_Bunker_ItemPickedUp = "Objeto recogido",
     IGUI_Bunker_StructureSealed = "Kit de Bunker: Estructura sellada con exito",
     IGUI_Bunker_KitUnpacked = "Kit desempaquetado",
+    IGUI_Bunker_CentralGeneratorConnected = "Central local conectada (generador oculto sin toxicidad)",
+    IGUI_Bunker_CentralGeneratorAlreadyConnected = "La central local ya esta conectada",
+    IGUI_Bunker_CentralGeneratorOn = "Central local encendida",
+    IGUI_Bunker_CentralGeneratorOff = "Central local apagada",
+    IGUI_Bunker_CentralGeneratorAlreadyOn = "La central local ya esta encendida",
+    IGUI_Bunker_CentralGeneratorAlreadyOff = "La central local ya esta apagada",
+    IGUI_Bunker_CentralGeneratorOnlyBasement = "Solo puedes conectarla en el sotano Z-1",
 }

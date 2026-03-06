@@ -16,6 +16,114 @@ function BunkersAnywhere.getEntranceSprite(sq)
     end
 end
 
+BunkersAnywhere.InvisibleCentralGenerator = {
+    DataKey = "BunkersAnywhereInvisibleCentralGenerators",
+    SpriteName = "location_business_bank_01_67",
+    ZLevel = -1,
+}
+
+function BunkersAnywhere.isInvisibleCentralTile(obj)
+    if not obj or not obj.getSprite then return false end
+    local sprite = obj:getSprite()
+    if not sprite or not sprite.getName then return false end
+    return sprite:getName() == BunkersAnywhere.InvisibleCentralGenerator.SpriteName
+end
+
+function BunkersAnywhere.getInvisibleGeneratorStore()
+    local data = ModData.getOrCreate(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
+    data.nodes = data.nodes or {}
+    return data
+end
+
+function BunkersAnywhere.getInvisibleGeneratorNodeKey(x, y, z)
+    return tostring(math.floor(x)) .. ":" .. tostring(math.floor(y)) .. ":" .. tostring(math.floor(z))
+end
+
+function BunkersAnywhere.isInvisibleGeneratorConnected(obj)
+    if not obj or not obj.getModData then return false end
+    local md = obj:getModData()
+    return md and md.baInvisibleGeneratorConnected == true
+end
+
+function BunkersAnywhere.connectInvisibleGeneratorCentral(centralObj, playerObj)
+    local sq = centralObj and centralObj:getSquare()
+    if not sq then return end
+    if sq:getZ() ~= BunkersAnywhere.InvisibleCentralGenerator.ZLevel then
+        playerObj:setHaloNote(getText("IGUI_Bunker_CentralGeneratorOnlyBasement"), 255, 120, 0, 350)
+        return
+    end
+
+    if BunkersAnywhere.isInvisibleGeneratorConnected(centralObj) then
+        playerObj:setHaloNote(getText("IGUI_Bunker_CentralGeneratorAlreadyConnected"), 240, 240, 0, 300)
+        return
+    end
+
+    local md = centralObj:getModData()
+    md.baInvisibleGeneratorConnected = true
+    md.baInvisibleGeneratorOn = true
+    if centralObj.transmitModData then
+        centralObj:transmitModData()
+    end
+
+    local store = BunkersAnywhere.getInvisibleGeneratorStore()
+    local key = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
+    store.nodes[key] = { x = sq:getX(), y = sq:getY(), z = sq:getZ(), active = true }
+    if ModData.transmit then
+        ModData.transmit(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
+    end
+
+    if sendClientCommand then
+        sendClientCommand("BunkersAnywhere", "ConnectInvisibleGeneratorCentral", {
+            x = sq:getX(),
+            y = sq:getY(),
+            z = sq:getZ(),
+        })
+    end
+
+    playerObj:setHaloNote(getText("IGUI_Bunker_CentralGeneratorConnected"), 0, 255, 100, 350)
+end
+
+function BunkersAnywhere.setInvisibleGeneratorCentralState(centralObj, playerObj, wantOn)
+    local sq = centralObj and centralObj:getSquare()
+    if not sq then return end
+    if not BunkersAnywhere.isInvisibleGeneratorConnected(centralObj) then return end
+
+    local md = centralObj:getModData()
+    local current = md.baInvisibleGeneratorOn == true
+    if current == wantOn then
+        local key = wantOn and "IGUI_Bunker_CentralGeneratorAlreadyOn" or "IGUI_Bunker_CentralGeneratorAlreadyOff"
+        playerObj:setHaloNote(getText(key), 240, 240, 0, 300)
+        return
+    end
+
+    md.baInvisibleGeneratorOn = wantOn
+    if centralObj.transmitModData then
+        centralObj:transmitModData()
+    end
+
+    local store = BunkersAnywhere.getInvisibleGeneratorStore()
+    local key = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
+    if store.nodes[key] then
+        store.nodes[key].active = wantOn
+        if ModData.transmit then
+            ModData.transmit(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
+        end
+    end
+
+    if sendClientCommand then
+        sendClientCommand("BunkersAnywhere", "ToggleInvisibleGeneratorCentral", {
+            x = sq:getX(),
+            y = sq:getY(),
+            z = sq:getZ(),
+            on = wantOn and true or false,
+        })
+    end
+
+    local textKey = wantOn and "IGUI_Bunker_CentralGeneratorOn" or "IGUI_Bunker_CentralGeneratorOff"
+    local r, g, b = wantOn and 0 or 255, wantOn and 255 or 180, wantOn and 100 or 120
+    playerObj:setHaloNote(getText(textKey), r, g, b, 350)
+end
+
 function BunkersAnywhere.teleportToZ(playerObj, newZ, targetX, targetY)
     if playerObj and newZ ~= nil and targetX ~= nil and targetY ~= nil then
         local cell = getCell()
@@ -475,6 +583,24 @@ function BunkersAnywhere.onUnpackBunkerKit(kitItem, playerObj)
     ISTimedActionQueue.add(ISBunkerAction:new(playerObj, playerObj:getSquare(), 100, "Loot", "HammerClick", BunkersAnywhere.unpackBunkerKit, kitItem, playerObj))
 end
 
+function BunkersAnywhere.onConnectInvisibleGeneratorCentral(centralObj, playerObj)
+    if luautils.walk(playerObj, centralObj:getSquare()) then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, centralObj:getSquare(), 120, "Loot", "LightSwitch", BunkersAnywhere.connectInvisibleGeneratorCentral, centralObj, playerObj))
+    end
+end
+
+function BunkersAnywhere.onTurnOnInvisibleGeneratorCentral(centralObj, playerObj)
+    if luautils.walk(playerObj, centralObj:getSquare()) then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, centralObj:getSquare(), 70, "Loot", "LightSwitch", BunkersAnywhere.setInvisibleGeneratorCentralState, centralObj, playerObj, true))
+    end
+end
+
+function BunkersAnywhere.onTurnOffInvisibleGeneratorCentral(centralObj, playerObj)
+    if luautils.walk(playerObj, centralObj:getSquare()) then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, centralObj:getSquare(), 70, "Loot", "LightSwitch", BunkersAnywhere.setInvisibleGeneratorCentralState, centralObj, playerObj, false))
+    end
+end
+
 -- ==========================================================
 -- Context Menus
 -- ==========================================================
@@ -522,9 +648,13 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
     
     local targetObj = nil
     local stairObj = nil
+    local centralObj = nil
     local objects = sq:getObjects()
     for i = 0, objects:size() - 1 do
         local obj = objects:get(i)
+        if not centralObj and BunkersAnywhere.isInvisibleCentralTile(obj) then
+            centralObj = obj
+        end
         if obj and obj.getModData then
             local modData = obj:getModData()
             if modData and modData.bunkerType then
@@ -560,6 +690,42 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
         if inv:containsWithModule("Base.BunkerKit") then
             context:addOption(getText("ContextMenu_InstallBunkerKit"), stairObj, BunkersAnywhere.onInstallBunkerKit, playerObj)
         end
+    end
+
+    if centralObj then
+        if not BunkersAnywhere.isInvisibleGeneratorConnected(centralObj) then
+            context:addOption(getText("ContextMenu_ConnectInvisibleGeneratorCentral"), centralObj, BunkersAnywhere.onConnectInvisibleGeneratorCentral, playerObj)
+        else
+            local md = centralObj:getModData()
+            local isOn = md and md.baInvisibleGeneratorOn == true
+            if isOn then
+                context:addOption(getText("ContextMenu_TurnOffInvisibleGeneratorCentral"), centralObj, BunkersAnywhere.onTurnOffInvisibleGeneratorCentral, playerObj)
+            else
+                context:addOption(getText("ContextMenu_TurnOnInvisibleGeneratorCentral"), centralObj, BunkersAnywhere.onTurnOnInvisibleGeneratorCentral, playerObj)
+            end
+        end
+    end
+
+    local hasOwnedInvisibleGenerator = false
+    for _, wo in ipairs(worldobjects) do
+        if wo and instanceof(wo, "IsoGenerator") and wo.getModData then
+            local gmd = wo:getModData()
+            if gmd and gmd.baInvisibleGeneratorOwned then
+                hasOwnedInvisibleGenerator = true
+                break
+            end
+        end
+    end
+
+    if hasOwnedInvisibleGenerator then
+        context:removeOptionByName(getText("ContextMenu_Generator"))
+        context:removeOptionByName(getText("ContextMenu_GeneratorInfo"))
+        context:removeOptionByName(getText("ContextMenu_GeneratorPlug"))
+        context:removeOptionByName(getText("ContextMenu_GeneratorUnplug"))
+        context:removeOptionByName(getText("ContextMenu_GeneratorAddFuel"))
+        context:removeOptionByName(getText("ContextMenu_GeneratorFix"))
+        context:removeOptionByName(getText("ContextMenu_GeneratorTake"))
+        context:removeOptionByName(getText("ContextMenu_Vehicle_PlugGenerator"))
     end
 end
 

@@ -4,4 +4,11 @@ IG_UI_EN = {
     IGUI_Bunker_ItemPickedUp = "Item picked up",
     IGUI_Bunker_StructureSealed = "Bunker Kit: Structure successfully sealed",
     IGUI_Bunker_KitUnpacked = "Kit unpacked",
+    IGUI_Bunker_CentralGeneratorConnected = "Local central connected (hidden non-toxic generator)",
+    IGUI_Bunker_CentralGeneratorAlreadyConnected = "Local central is already connected",
+    IGUI_Bunker_CentralGeneratorOn = "Local central turned on",
+    IGUI_Bunker_CentralGeneratorOff = "Local central turned off",
+    IGUI_Bunker_CentralGeneratorAlreadyOn = "Local central is already on",
+    IGUI_Bunker_CentralGeneratorAlreadyOff = "Local central is already off",
+    IGUI_Bunker_CentralGeneratorOnlyBasement = "You can only connect it in basement Z-1",
 }

@@ -9,4 +9,7 @@ ContextMenu_EN = {
     ContextMenu_GoUpFloor = "Go Up to Floor (Z+1)",
     ContextMenu_UninstallLadder = "Uninstall Ladder",
     ContextMenu_InstallBunkerKit = "Install Bunker Kit (Replace Stairs)",
+    ContextMenu_ConnectInvisibleGeneratorCentral = "Connect local electric central",
+    ContextMenu_TurnOnInvisibleGeneratorCentral = "Turn on local electric central",
+    ContextMenu_TurnOffInvisibleGeneratorCentral = "Turn off local electric central",
 }

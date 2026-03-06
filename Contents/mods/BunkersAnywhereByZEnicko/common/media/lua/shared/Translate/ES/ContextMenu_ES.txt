@@ -9,4 +9,7 @@ ContextMenu_ES = {
     ContextMenu_GoUpFloor = "Subir a Planta Baja (Z+1)",
     ContextMenu_UninstallLadder = "Desinstalar Escalera",
     ContextMenu_InstallBunkerKit = "Instalar Kit de Bunker (Sustituir Escaleras)",
+    ContextMenu_ConnectInvisibleGeneratorCentral = "Conectar central electrica local",
+    ContextMenu_TurnOnInvisibleGeneratorCentral = "Encender central electrica local",
+    ContextMenu_TurnOffInvisibleGeneratorCentral = "Apagar central electrica local",
 }
