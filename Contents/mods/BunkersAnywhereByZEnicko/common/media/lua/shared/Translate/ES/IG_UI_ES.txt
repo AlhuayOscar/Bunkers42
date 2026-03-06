@@ -11,4 +11,13 @@ IG_UI_ES = {
     IGUI_Bunker_CentralGeneratorAlreadyOn = "La central local ya esta encendida",
     IGUI_Bunker_CentralGeneratorAlreadyOff = "La central local ya esta apagada",
     IGUI_Bunker_CentralGeneratorOnlyBasement = "Solo puedes conectarla en el sotano Z-1",
+    IGUI_Bunker_CentralNeedLinkFirst = "Primero conecta esta central con otra central",
+    IGUI_Bunker_CentralNeedWire = "Necesitas %1 cantidad de cable electrico (disponible: %2)",
+    IGUI_Bunker_CentralLinkedTo = "Central enlazada a %1, %2, %3",
+    IGUI_Bunker_CentralAlreadyLinked = "Estas centrales ya estan enlazadas",
+    IGUI_Bunker_MailNoCentralNearby = "No hay una central activa cerca",
+    IGUI_Bunker_MailboxFull = "Buzon de envios lleno (maximo %1 objetos)",
+    IGUI_Bunker_MailActivated = "Buzon de envios activado",
+    IGUI_Bunker_MailSentTo = "Envio enviado a %1, %2, %3",
+    IGUI_Bunker_MailDeposited = "Objetos depositados en el buzon de envios",
 }

@@ -11,4 +11,13 @@ IG_UI_EN = {
     IGUI_Bunker_CentralGeneratorAlreadyOn = "Local central is already on",
     IGUI_Bunker_CentralGeneratorAlreadyOff = "Local central is already off",
     IGUI_Bunker_CentralGeneratorOnlyBasement = "You can only connect it in basement Z-1",
+    IGUI_Bunker_CentralNeedLinkFirst = "First connect this central to another central",
+    IGUI_Bunker_CentralNeedWire = "You need %1 electric wire (available: %2)",
+    IGUI_Bunker_CentralLinkedTo = "Central linked to %1, %2, %3",
+    IGUI_Bunker_CentralAlreadyLinked = "These centrals are already linked",
+    IGUI_Bunker_MailNoCentralNearby = "No active central nearby",
+    IGUI_Bunker_MailboxFull = "Shipping mailbox full (max %1 items)",
+    IGUI_Bunker_MailActivated = "Shipping mailbox activated",
+    IGUI_Bunker_MailSentTo = "Shipment sent to %1, %2, %3",
+    IGUI_Bunker_MailDeposited = "Items deposited in shipping mailbox",
 }

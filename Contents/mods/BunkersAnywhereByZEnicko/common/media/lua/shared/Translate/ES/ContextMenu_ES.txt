@@ -12,4 +12,12 @@ ContextMenu_ES = {
     ContextMenu_ConnectInvisibleGeneratorCentral = "Conectar central electrica local",
     ContextMenu_TurnOnInvisibleGeneratorCentral = "Encender central electrica local",
     ContextMenu_TurnOffInvisibleGeneratorCentral = "Apagar central electrica local",
+    ContextMenu_ConnectToOtherCentral = "Conectar con otra central",
+    ContextMenu_ConnectToOtherCentralCoord = "Conectar con otra central: %1, %2, %3",
+    ContextMenu_DepositToShippingMailbox = "Depositar en buzon de envios",
+    ContextMenu_ActivateShippingMailbox = "Activar buzon de envios",
+    ContextMenu_WithdrawFromShippingMailbox = "Retirar del buzon de envios",
+    ContextMenu_SendShippingMailbox = "Enviar envio",
+    ContextMenu_SendShippingMailboxTo = "Enviar a: %1, %2, %3",
+    ContextMenu_CentralDependsOn = "Esta central depende de: %1",
 }

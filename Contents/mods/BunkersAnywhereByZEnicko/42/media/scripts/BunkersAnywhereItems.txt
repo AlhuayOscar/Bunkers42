@@ -3,27 +3,24 @@ module Base
     item BunkerDoor
     {
         ItemType = base:normal,
-        DisplayName = "Puerta de Bunker",
-        DisplayCategory = Material,
         Icon = DoorBunker,
+        DisplayCategory = Material,
         Weight = 10,
     }
 
     item BunkerLadder
     {
         ItemType = base:normal,
-        DisplayName = "Escalera de Bunker",
-        DisplayCategory = Material,
         Icon = LadderSewer,
+        DisplayCategory = Material,
         Weight = 5,
     }
 
     item BunkerKit
     {
         ItemType = base:normal,
-        DisplayName = "Kit de Bunker",
-        DisplayCategory = Household,
         Icon = BunkerKit,
+        DisplayCategory = Household,
         Weight = 20,
     }
 }
