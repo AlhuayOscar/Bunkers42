@@ -122,11 +122,14 @@ local function ensureInvisibleGenerator(square, wantOn)
         generator:setSurroundingElectricity()
     end
 
-    pcall(function() generator:setAlpha(0.0) end)
-    pcall(function() generator:setTargetAlpha(0, 0.0) end)
-    pcall(function() generator:setTargetAlpha(1, 0.0) end)
+    if generator.setAlpha then
+        pcall(function() generator:setAlpha(0.0) end)
+    end
     if generator.setSprite then
-        generator:setSprite(nil)
+        pcall(function() generator:setSprite(nil) end)
+    end
+    if generator.transmitModData then
+        pcall(function() generator:transmitModData() end)
     end
     if generator.sync then
         generator:sync()
@@ -240,11 +243,14 @@ local function applyNetworkPower(store)
         local providerCount = 0
         local pList = providers[key]
         if pList then
-            providerCount = #pList
             local parts = {}
             for _, p in ipairs(pList) do
-                table.insert(parts, tostring(p.x) .. "," .. tostring(p.y) .. "," .. tostring(p.z))
+                -- Do not count self as a dependency.
+                if p.key ~= key then
+                    table.insert(parts, tostring(p.x) .. "," .. tostring(p.y) .. "," .. tostring(p.z))
+                end
             end
+            providerCount = #parts
             providerText = table.concat(parts, " | ")
         end
         if square then

@@ -76,6 +76,86 @@ function BunkersAnywhere.isInvisibleGeneratorConnected(obj)
     return md and md.baInvisibleGeneratorConnected == true
 end
 
+function BunkersAnywhere.isOwnedInvisibleGenerator(obj)
+    if not obj then return false end
+    if not obj.getModData then return false end
+    local md = obj:getModData()
+    return md and md.baInvisibleGeneratorOwned == true
+end
+
+function BunkersAnywhere.forceHideGeneratorVisual(obj)
+    if not obj then return false end
+    -- MP clients may re-render replicated generators with default sprite.
+    -- Force-hide repeatedly on client to keep it fully invisible.
+    if obj.setAlpha then
+        pcall(function() obj:setAlpha(0.0) end)
+    end
+    if obj.setSprite then
+        pcall(function() obj:setSprite(nil) end)
+    end
+    return true
+end
+
+function BunkersAnywhere.hideOwnedInvisibleGenerator(obj)
+    if not BunkersAnywhere.isOwnedInvisibleGenerator(obj) then return false end
+    return BunkersAnywhere.forceHideGeneratorVisual(obj)
+end
+
+function BunkersAnywhere.hideGeneratorNearCentralNode(node)
+    if not node then return false end
+    local cell = getCell()
+    if not cell then return false end
+    local hiddenAny = false
+
+    -- In MP the generator can be placed/rendered in an adjacent tile
+    -- depending on engine placement constraints and replication.
+    for dx = -1, 1 do
+        for dy = -1, 1 do
+            local sq = cell:getGridSquare(node.x + dx, node.y + dy, node.z)
+            if sq then
+                local g = sq:getGenerator()
+                if g then
+                    local hiddenOwned = BunkersAnywhere.hideOwnedInvisibleGenerator(g)
+                    if hiddenOwned then
+                        hiddenAny = true
+                    else
+                        local gmd = (g.getModData and g:getModData()) or nil
+                        local hasOwnedFlag = gmd and (gmd.baInvisibleGeneratorOwned ~= nil)
+                        local fuel = (g.getFuel and g:getFuel()) or 0
+                        local cond = (g.getCondition and g:getCondition()) or 0
+                        local closeToCentral = (math.abs(dx) + math.abs(dy)) <= 1
+
+                        -- Fallback for MP desync cases where modData ownership
+                        -- isn't replicated to this client but object is ours.
+                        if (not hasOwnedFlag) and closeToCentral and fuel >= 99 and cond >= 99 then
+                            if BunkersAnywhere.forceHideGeneratorVisual(g) then
+                                hiddenAny = true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return hiddenAny
+end
+
+function BunkersAnywhere.refreshOwnedInvisibleGenerators()
+    local cell = getCell()
+    if not cell then return end
+
+    local basementZ = BunkersAnywhere.InvisibleCentralGenerator.ZLevel
+    local store = BunkersAnywhere.getInvisibleGeneratorStore()
+    if not store or not store.nodes then return end
+
+    for _, node in pairs(store.nodes) do
+        if node and node.z == basementZ then
+            BunkersAnywhere.hideGeneratorNearCentralNode(node)
+        end
+    end
+end
+
 function BunkersAnywhere.getWireDistanceCost(fromSq, toX, toY)
     local dx = fromSq:getX() - toX
     local dy = fromSq:getY() - toY
@@ -1077,7 +1157,8 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
         local netOn = md and md.baInvisibleGeneratorOn == true
         local localOn = md and md.baInvisibleGeneratorLocalOn == true
         local providers = md and md.baInvisibleGeneratorProviderText or nil
-        if providers and providers ~= "" then
+        local providerCount = tonumber(md and md.baInvisibleGeneratorProviderCount) or 0
+        if providerCount > 0 and providers and providers ~= "" then
             local depLabel = getText("ContextMenu_CentralDependsOn", tostring(providers))
             local depOpt = context:addOption(depLabel)
             depOpt.notAvailable = true
@@ -1122,12 +1203,9 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
 
     local hasOwnedInvisibleGenerator = false
     for _, wo in ipairs(worldobjects) do
-        if wo and instanceof(wo, "IsoGenerator") and wo.getModData then
-            local gmd = wo:getModData()
-            if gmd and gmd.baInvisibleGeneratorOwned then
-                hasOwnedInvisibleGenerator = true
-                break
-            end
+        if BunkersAnywhere.hideOwnedInvisibleGenerator(wo) then
+            hasOwnedInvisibleGenerator = true
+            break
         end
     end
 
@@ -1209,3 +1287,14 @@ local function BunkersAnywhereOnKeyPressed(key)
 end
 
 Events.OnKeyPressed.Add(BunkersAnywhereOnKeyPressed)
+
+local _baGeneratorHideTick = 0
+local function BunkersAnywhereOnTickHideOwnedGenerators()
+    _baGeneratorHideTick = _baGeneratorHideTick + 1
+    if _baGeneratorHideTick < 3 then return end
+    _baGeneratorHideTick = 0
+    BunkersAnywhere.refreshOwnedInvisibleGenerators()
+end
+
+Events.OnTick.Add(BunkersAnywhereOnTickHideOwnedGenerators)
+Events.OnGameStart.Add(BunkersAnywhere.refreshOwnedInvisibleGenerators)
