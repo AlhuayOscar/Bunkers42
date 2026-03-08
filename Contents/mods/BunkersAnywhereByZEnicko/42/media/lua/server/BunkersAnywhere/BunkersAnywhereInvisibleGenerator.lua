@@ -13,11 +13,13 @@ local CFG = {
     MailboxCapacity = 100,
     CentralEnergyMax = 100,
     CentralDrainPerMinute = 1,
+    BatteryMaxUses = 3,
+    BatteryScrapRewardType = "Base.ElectronicsScrap",
     BatteryChargeByType = {
-        ["Base.CarBattery"] = 40,
-        ["Base.CarBattery1"] = 40,
-        ["Base.CarBattery2"] = 60,
-        ["Base.CarBattery3"] = 80,
+        ["Base.CarBattery"] = 10,
+        ["Base.CarBattery1"] = 10,
+        ["Base.CarBattery2"] = 15,
+        ["Base.CarBattery3"] = 20,
     },
     MinElectricityToConnect = 3,
 }
@@ -76,11 +78,36 @@ local function getBatteryChargePercent(fullType)
     end
 
     -- Fallback for battery naming variants.
-    if shortType == "CarBattery" then return 40 end
-    if shortType == "CarBattery1" then return 40 end
-    if shortType == "CarBattery2" then return 60 end
-    if shortType == "CarBattery3" then return 80 end
+    if shortType == "CarBattery" then return 10 end
+    if shortType == "CarBattery1" then return 10 end
+    if shortType == "CarBattery2" then return 15 end
+    if shortType == "CarBattery3" then return 20 end
     return 0
+end
+
+local function clampBatteryUses(value)
+    local n = math.floor(tonumber(value) or 1)
+    if n < 1 then n = 1 end
+    if n > CFG.BatteryMaxUses then n = CFG.BatteryMaxUses end
+    return n
+end
+
+local function getBatteryStateLabelByUses(uses)
+    local n = clampBatteryUses(uses)
+    if n <= 1 then return "Buen estado" end
+    if n == 2 then return "Usada" end
+    return "Malgastada"
+end
+
+local function applyBatteryMetadata(item, uses)
+    if not item then return end
+    local n = clampBatteryUses(uses)
+    local md = item:getModData()
+    md.baCentralBatteryUses = n
+    local short = getShortTypeFromFullType(item:getFullType()) or item:getType() or "CarBattery"
+    if item.setName then
+        item:setName(tostring(short) .. " (" .. tostring(getBatteryStateLabelByUses(n)) .. ")")
+    end
 end
 
 local function getBatteryDefsOrdered()
@@ -465,7 +492,22 @@ local function forceNoToxic(square)
     end
 end
 
-local function updateCentralModData(square, on, localOn, providerText, providerCount, isSource, energyPercent)
+local function copyInstalledBatteriesList(installed)
+    local result = {}
+    if not installed then return result end
+    for i = 1, #installed do
+        local entry = installed[i]
+        if entry then
+            table.insert(result, {
+                fullType = tostring(entry.fullType or "Base.CarBattery"),
+                uses = clampBatteryUses(entry.uses),
+            })
+        end
+    end
+    return result
+end
+
+local function updateCentralModData(square, on, localOn, providerText, providerCount, isSource, energyPercent, installedBatteries)
     local hasCentral, centralObj = hasCentralOnSquare(square)
     if hasCentral and centralObj and centralObj.getModData then
         local md = centralObj:getModData()
@@ -476,6 +518,9 @@ local function updateCentralModData(square, on, localOn, providerText, providerC
         md.baInvisibleGeneratorProviderText = providerText or ""
         md.baInvisibleGeneratorProviderCount = tonumber(providerCount) or 0
         md.baCentralEnergyPercent = clampEnergyPercent(energyPercent)
+        local copied = copyInstalledBatteriesList(installedBatteries)
+        md.baCentralInstalledBatteries = copied
+        md.baCentralInstalledBatteryCount = #copied
         if centralObj.transmitModData then
             centralObj:transmitModData()
         end
@@ -560,7 +605,7 @@ local function applyNetworkPower(store)
             providerText = table.concat(parts, " | ")
         end
         if square then
-            updateCentralModData(square, wantOn, localOn, providerText, providerCount, isSource, energyPercent)
+            updateCentralModData(square, wantOn, localOn, providerText, providerCount, isSource, energyPercent, node.installedBatteries)
             ensureInvisibleGenerator(square, wantOn)
             forceNoToxic(square)
             clampGeneratorPowerToBasement(node)
@@ -642,6 +687,7 @@ local function ensureNodeAt(x, y, z, asSource)
         links = previous.links or {},
         source = previous.source,
         energy = previous.energy,
+        installedBatteries = previous.installedBatteries or {},
     }
     if asSource == true then
         node.source = true
@@ -785,15 +831,18 @@ local function insertCentralBatteryAt(x, y, z, player, fullType, args)
     end
     if not node then return false end
     node.source = true
+    node.installedBatteries = node.installedBatteries or {}
 
     local okRemove, resolvedFullType, charge = false, nil, 0
     local clientConsumed = args and args.clientConsumed == true
     local clientCharge = args and math.floor(tonumber(args.charge) or 0) or 0
+    local batteryUses = 1
 
     if clientConsumed and clientCharge > 0 then
         okRemove = true
         resolvedFullType = tostring(fullType or "")
         charge = clientCharge
+        batteryUses = clampBatteryUses(args and args.batteryUses or 1)
     else
         okRemove, resolvedFullType, charge = consumeBatteryItemFromPlayer(player, fullType)
         if not okRemove then
@@ -827,7 +876,87 @@ local function insertCentralBatteryAt(x, y, z, player, fullType, args)
     end
 
     node.energy = clampEnergyPercent(target)
+    table.insert(node.installedBatteries, {
+        fullType = resolvedFullType,
+        uses = batteryUses,
+    })
     print("[BunkersAnywhere] InsertCentralBattery applied: " .. tostring(resolvedFullType) .. " +" .. tostring(charge) .. "% (" .. tostring(current) .. "% -> " .. tostring(node.energy) .. "%)")
+    transmitStore()
+    applyNetworkPower(store)
+    return true
+end
+
+local function giveBatteryScrapReward(player)
+    if not player then return false end
+    local inv = player:getInventory()
+    if not inv then return false end
+
+    local scrap = inv:AddItem(CFG.BatteryScrapRewardType)
+    if scrap then return true end
+
+    scrap = inv:AddItem("Base.ScrapElectronics")
+    if scrap then return true end
+
+    scrap = inv:AddItem("Base.ElectronicsScrap")
+    return scrap ~= nil
+end
+
+local function sendCentralBatteryPayoutToClient(player, mode, fullType, uses)
+    if not player or not sendServerCommand then return false end
+    sendServerCommand(player, "BunkersAnywhere", "CentralBatteryPayout", {
+        mode = tostring(mode or ""),
+        fullType = tostring(fullType or ""),
+        uses = clampBatteryUses(uses),
+    })
+    return true
+end
+
+local function removeCentralBatteryAt(x, y, z, player, batteryIndex)
+    local store = getStore()
+    local key = getNodeKey(x, y, z)
+    local node = store.nodes[key]
+    if not node then return false end
+    if node.active == true then
+        print("[BunkersAnywhere] RemoveCentralBattery rejected: central is ON at " .. tostring(x) .. "," .. tostring(y) .. "," .. tostring(z))
+        return false
+    end
+
+    node.installedBatteries = node.installedBatteries or {}
+    if #node.installedBatteries <= 0 then return false end
+
+    local idx = math.floor(tonumber(batteryIndex) or -1)
+    if idx < 1 or idx > #node.installedBatteries then
+        idx = #node.installedBatteries
+    end
+
+    local entry = table.remove(node.installedBatteries, idx)
+    if not entry then return false end
+
+    local fullType = tostring(entry.fullType or "Base.CarBattery")
+    local uses = clampBatteryUses(entry.uses)
+    local username = (player and player.getUsername and player:getUsername()) or "unknown"
+
+    if uses >= CFG.BatteryMaxUses then
+        local sent = sendCentralBatteryPayoutToClient(player, "scrap", CFG.BatteryScrapRewardType, uses)
+        local gaveScrap = false
+        if not sent then
+            gaveScrap = giveBatteryScrapReward(player)
+        end
+        print("[BunkersAnywhere] RemoveCentralBattery scrapped: " .. tostring(fullType) .. " uses=" .. tostring(uses) .. " user=" .. tostring(username) .. " sent=" .. tostring(sent) .. " fallbackScrap=" .. tostring(gaveScrap))
+    else
+        local sent = sendCentralBatteryPayoutToClient(player, "battery", fullType, uses)
+        local fallbackAdded = false
+        if not sent then
+            local inv = player and player:getInventory() or nil
+            local item = inv and inv:AddItem(fullType) or nil
+            if item then
+                applyBatteryMetadata(item, uses)
+                fallbackAdded = true
+            end
+        end
+        print("[BunkersAnywhere] RemoveCentralBattery returned: " .. tostring(fullType) .. " uses=" .. tostring(uses) .. " user=" .. tostring(username) .. " sent=" .. tostring(sent) .. " fallbackAdded=" .. tostring(fallbackAdded))
+    end
+
     transmitStore()
     applyNetworkPower(store)
     return true
@@ -1116,6 +1245,8 @@ local function onClientCommand(module, command, player, args)
         setNodeStateAt(tonumber(args.x), tonumber(args.y), tonumber(args.z), args.on == true)
     elseif command == "InsertCentralBattery" then
         insertCentralBatteryAt(tonumber(args.x), tonumber(args.y), tonumber(args.z), actor, tostring(args.fullType or ""), args)
+    elseif command == "RemoveCentralBattery" then
+        removeCentralBatteryAt(tonumber(args.x), tonumber(args.y), tonumber(args.z), actor, tonumber(args.batteryIndex))
     elseif command == "DebugCentralBatteryInventory" then
         debugDumpPlayerBatteryInventory(actor, tostring(args.reason or "OnClientCommand"))
     elseif command == "LinkInvisibleGeneratorCentrals" then
