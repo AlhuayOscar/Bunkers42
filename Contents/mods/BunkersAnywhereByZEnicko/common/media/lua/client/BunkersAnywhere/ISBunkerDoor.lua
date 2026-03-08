@@ -1,13 +1,14 @@
 BunkersAnywhere = BunkersAnywhere or {}
+require "ISUI/ISInventoryPaneContextMenu"
 
--- Sprites dinámicos
+-- Sprites dinÃ¡micos
 BunkersAnywhere.Sprites = {
     InsideEntrance = "street_decoration_01_15", -- Escotilla/Manhole
     OutsideEntrance = "street_decoration_01_15", -- Escotilla/Manhole
     Ladder = "location_sewer_01_32" -- Escalera de alcantarilla (B42 style)
 }
 
--- Función para elegir el sprite según el entorno
+-- FunciÃ³n para elegir el sprite segÃºn el entorno
 function BunkersAnywhere.getEntranceSprite(sq)
     if sq:isOutside() then
         return BunkersAnywhere.Sprites.OutsideEntrance
@@ -15,6 +16,8 @@ function BunkersAnywhere.getEntranceSprite(sq)
         return BunkersAnywhere.Sprites.InsideEntrance
     end
 end
+
+-- Central system moved to ISBunkerCentral.lua
 
 function BunkersAnywhere.teleportToZ(playerObj, newZ, targetX, targetY)
     if playerObj and newZ ~= nil and targetX ~= nil and targetY ~= nil then
@@ -26,7 +29,7 @@ function BunkersAnywhere.teleportToZ(playerObj, newZ, targetX, targetY)
         playerObj:setY(math.floor(targetY) + 0.5)
         playerObj:setZ(newZ)
         
-        -- Forzamos la actualización de coordenadas "last" para evitar interpolaciones raras en MP
+        -- Forzamos la actualizaciÃ³n de coordenadas "last" para evitar interpolaciones raras en MP
         playerObj:setLx(playerObj:getX())
         playerObj:setLy(playerObj:getY())
         playerObj:setLz(playerObj:getZ())
@@ -61,7 +64,7 @@ function BunkersAnywhere.canTeleportTo(sqX, sqY, targetZ)
     return false
 end
 
--- Función para colocar objetos en el mundo
+-- FunciÃ³n para colocar objetos en el mundo
 function BunkersAnywhere.placeObject(worldobjects, playerObj, item, objName, zDir)
     local sq = playerObj:getSquare()
     if not sq then return end
@@ -88,21 +91,21 @@ function BunkersAnywhere.placeObject(worldobjects, playerObj, item, objName, zDi
     playerObj:setHaloNote(itemName .. getText("IGUI_Bunker_Installed"), 0, 255, 0, 300)
 end
 
--- Función para desinstalar
+-- FunciÃ³n para desinstalar
 function BunkersAnywhere.removeObject(obj, playerObj, itemFullType)
     local sq = obj:getSquare()
     if not sq then return end
     
     obj:removeFromSquare()
     
-    -- Si al quitar el objeto no queda suelo, ponemos tablones (evita caer al vacío)
+    -- Si al quitar el objeto no queda suelo, ponemos tablones (evita caer al vacÃ­o)
     BunkersAnywhere.ensureFloor(sq)
 
     playerObj:getInventory():AddItem(itemFullType)
     playerObj:setHaloNote(getText("IGUI_Bunker_ItemPickedUp"), 200, 200, 200, 300)
 end
 
--- Función para detectar si un objeto es una escalera (por flags o nombre de sprite)
+-- FunciÃ³n para detectar si un objeto es una escalera (por flags o nombre de sprite)
 function BunkersAnywhere.isStair(obj)
     if not obj then return false end
     
@@ -152,7 +155,7 @@ function BunkersAnywhere.isStair(obj)
 end
 
 
--- Función para detectar barandillas/pasamanos
+-- FunciÃ³n para detectar barandillas/pasamanos
 function BunkersAnywhere.isRailing(obj)
     if not obj then return false end
     if type(obj.getSprite) == "function" then
@@ -164,7 +167,7 @@ function BunkersAnywhere.isRailing(obj)
                 -- Patrones para barandillas
                 if string.find(spriteName, "railing") or string.find(spriteName, "fence_rs") or
                    string.find(spriteName, "fixtures_railings") or
-                   -- Agregamos rangos específicos solicitados
+                   -- Agregamos rangos especÃ­ficos solicitados
                    string.find(spriteName, "fixtures_railings_01_59") or
                    string.find(spriteName, "fixtures_railings_01_60") or
                    string.find(spriteName, "fixtures_railings_01_61") then
@@ -176,13 +179,13 @@ function BunkersAnywhere.isRailing(obj)
     return false
 end
 
--- FUNCIÓN: Asegurar que una casilla tenga suelo (y guardarla permanentemente)
+-- FUNCIÃ“N: Asegurar que una casilla tenga suelo (y guardarla permanentemente)
 function BunkersAnywhere.ensureFloor(sq, floorSprite)
     if not sq then return end
     
     local spriteToUse = floorSprite or "carpentry_02_57"
     
-    -- 1. Si no hay suelo, lo añadimos
+    -- 1. Si no hay suelo, lo aÃ±adimos
     if not sq:getFloor() then
         local newFloor = sq:addFloor(spriteToUse)
         if isClient() and newFloor then
@@ -204,7 +207,7 @@ function BunkersAnywhere.ensureFloor(sq, floorSprite)
     if sq.setSquareChanged then sq:setSquareChanged() end
     if sq.flagForHotSave then sq:flagForHotSave() end
     
-    -- 4. Transmisión segura en Multijugador
+    -- 4. TransmisiÃ³n segura en Multijugador
     if isClient() then
         if sq.transmitCompleteSquareToServer then
             sq:transmitCompleteSquareToServer()
@@ -212,7 +215,7 @@ function BunkersAnywhere.ensureFloor(sq, floorSprite)
     end
 end
 
--- FUNCIÓN: Usar el Bunker Kit en escaleras
+-- FUNCIÃ“N: Usar el Bunker Kit en escaleras
 function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
     local sq = stairObj:getSquare()
     local x, y, z = sq:getX(), sq:getY(), sq:getZ()
@@ -290,7 +293,7 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
             end
             
             if tSq then
-                -- Si no hay suelo, lo añadimos y sincronizamos
+                -- Si no hay suelo, lo aÃ±adimos y sincronizamos
                 BunkersAnywhere.ensureFloor(tSq, woodFloorSprite)
             end
         end
@@ -349,7 +352,7 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
     playerObj:setHaloNote(getText("IGUI_Bunker_StructureSealed"), 0, 255, 100, 400)
 end
 
--- FUNCIÓN: Desempaquetar el Kit
+-- FUNCIÃ“N: Desempaquetar el Kit
 function BunkersAnywhere.unpackBunkerKit(kitItem, playerObj)
     local inv = playerObj:getInventory()
     inv:Remove(kitItem)
@@ -360,7 +363,7 @@ function BunkersAnywhere.unpackBunkerKit(kitItem, playerObj)
 end
 
 -- ==========================================================
--- Timed Action: Acción Genérica del Bunker (Instalar/Subir/Bajar)
+-- Timed Action: AcciÃ³n GenÃ©rica del Bunker (Instalar/Subir/Bajar)
 -- ==========================================================
 require "TimedActions/ISBaseTimedAction"
 require "TimedActions/ISTimedActionQueue"
@@ -414,7 +417,7 @@ function ISBunkerAction:new(character, targetSq, time, anim, sound, callback, ar
 end
 
 -- ==========================================================
--- Wrappers para forzar TimedActions en los Menús
+-- Wrappers para forzar TimedActions en los MenÃºs
 -- ==========================================================
 
 function BunkersAnywhere.onInstallBunkerKit(stairObj, playerObj)
@@ -445,7 +448,7 @@ function BunkersAnywhere.onTeleport(targetObj, playerObj, newZ)
     if distX < 1.5 and distY < 1.5 and sameZ then
         if blocked then
             -- Si esta bloqueado (ej: separado por pared o barandilla), simplemente salimos.
-            -- Asi presionando 'E' el personaje no saltará ni correrá hacia otra escalera.
+            -- Asi presionando 'E' el personaje no saltarÃ¡ ni correrÃ¡ hacia otra escalera.
             return
         end
         playerObj:faceThisObject(targetObj)
@@ -516,33 +519,59 @@ end
 Events.OnFillInventoryObjectContextMenu.Add(BunkersAnywhereInventoryContext)
 
 local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
+    if not worldobjects then return end
     local playerObj = getSpecificPlayer(player)
-    local sq = worldobjects[1]:getSquare()
+    if not playerObj then return end
     local z = playerObj:getZ()
-    
+
     local targetObj = nil
     local stairObj = nil
-    local objects = sq:getObjects()
-    for i = 0, objects:size() - 1 do
-        local obj = objects:get(i)
-        if obj and obj.getModData then
-            local modData = obj:getModData()
-            if modData and modData.bunkerType then
-                targetObj = obj
-            elseif BunkersAnywhere.isStair(obj) then
-                stairObj = obj
+    local function scanSquare(sq)
+        if not sq then return end
+        local objects = sq:getObjects()
+        if not objects then return end
+        for i = 0, objects:size() - 1 do
+            local obj = objects:get(i)
+            if obj and obj.getModData then
+                local modData = obj:getModData()
+                if modData and modData.bunkerType then
+                    targetObj = obj
+                elseif BunkersAnywhere.isStair(obj) then
+                    stairObj = obj
+                end
             end
         end
     end
 
-    -- Menú para objetos del MOD
+    if worldobjects.size and worldobjects.get then
+        for i = 0, worldobjects:size() - 1 do
+            local wo = worldobjects:get(i)
+            local sq = wo and wo.getSquare and wo:getSquare() or nil
+            scanSquare(sq)
+            if targetObj and stairObj then break end
+        end
+    else
+        for _, wo in ipairs(worldobjects) do
+            local sq = wo and wo.getSquare and wo:getSquare() or nil
+            scanSquare(sq)
+            if targetObj and stairObj then break end
+        end
+    end
+
+    if not targetObj or not stairObj then
+        scanSquare(playerObj:getSquare())
+    end
+
+    -- Men� para objetos del MOD
     if targetObj then
+        local sq = targetObj:getSquare()
+        if not sq then return end
         local bType = targetObj:getModData().bunkerType
         local optionName = (bType == "Entrada de Bunker") and getText("ContextMenu_EntranceDown") or getText("ContextMenu_LadderUp")
         local submenu = context:addOption(optionName)
         local submenuCtx = ISContextMenu:getNew(context)
         context:addSubMenu(submenu, submenuCtx)
-        
+
         if bType == "Entrada de Bunker" then
             local downOption = submenuCtx:addOption(getText("ContextMenu_GoDownBasement"), targetObj, BunkersAnywhere.onTeleport, playerObj, z - 1)
             if not BunkersAnywhere.canTeleportTo(sq:getX(), sq:getY(), z - 1) then downOption.notAvailable = true end
@@ -554,7 +583,7 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
         end
     end
 
-    -- Menú para el BUNKER KIT (sobre escaleras vanilla)
+    -- Men� para el BUNKER KIT (sobre escaleras vanilla)
     if stairObj then
         local inv = playerObj:getInventory()
         if inv:containsWithModule("Base.BunkerKit") then
@@ -562,8 +591,14 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
         end
     end
 end
+local function BunkersAnywhereWorldContextSafe(player, context, worldobjects, test)
+    local ok, err = pcall(BunkersAnywhereWorldContext, player, context, worldobjects, test)
+    if not ok then
+        print("[BunkersAnywhere] DoorWorldContext error: " .. tostring(err))
+    end
+end
 
-Events.OnFillWorldObjectContextMenu.Add(BunkersAnywhereWorldContext)
+Events.OnFillWorldObjectContextMenu.Add(BunkersAnywhereWorldContextSafe)
 
 local function BunkersAnywhereOnKeyPressed(key)
     if key ~= getCore():getKey("Interact") then return end
