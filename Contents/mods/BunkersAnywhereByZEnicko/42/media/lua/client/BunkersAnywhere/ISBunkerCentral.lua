@@ -6,6 +6,12 @@ BunkersAnywhere.InvisibleCentralGenerator = {
     SpriteName = "location_business_bank_01_67",
     SpriteNameAlt = "location_business_bank_01_66",
     ZLevel = -1,
+    BaseRadius = 100,
+    RadiusUpgradeBonus = 2000,
+    RadiusUpgradeWireCost = 50,
+    RadiusUpgradeBonuses = { 25, 50, 100, 200, 500, 1000, 2000 },
+    RadiusUpgradeWireCosts = { 50, 50, 50, 50, 50, 50, 200 },
+    RadiusUpgradeEnabled = false,
 }
 
 BunkersAnywhere.ShippingMailbox = {
@@ -17,6 +23,7 @@ BunkersAnywhere.ShippingMailbox = {
 BunkersAnywhere.CentralBattery = {
     MaxEnergy = 100,
     MaxUses = 3,
+    MinutesPerPercent = 4,
     Types = {
         "Base.CarBattery",
         "Base.CarBattery1",
@@ -39,6 +46,8 @@ function BunkersAnywhere.isInvisibleCentralSpriteName(spriteName)
     if not spriteName then return false end
     if spriteName == BunkersAnywhere.InvisibleCentralGenerator.SpriteName then return true end
     if spriteName == BunkersAnywhere.InvisibleCentralGenerator.SpriteNameAlt then return true end
+    if string.match(spriteName, "^location_business_bank_01_6%d$") then return true end
+    if string.match(spriteName, "^location_business_bank_01_7%d$") then return true end
     return false
 end
 
@@ -47,6 +56,11 @@ function BunkersAnywhere.isInvisibleCentralTile(obj)
     local sprite = obj:getSprite()
     if not sprite or not sprite.getName then return false end
     return BunkersAnywhere.isInvisibleCentralSpriteName(sprite:getName())
+end
+
+local function isCentralSpriteFamilyName(spriteName)
+    if not spriteName then return false end
+    return string.match(spriteName, "^location_business_bank_01_") ~= nil
 end
 
 function BunkersAnywhere.getInvisibleGeneratorStore()
@@ -136,6 +150,93 @@ function BunkersAnywhere.getCentralEnergyPercent(node, modData)
         energy = BunkersAnywhere.CentralBattery.MaxEnergy
     end
     return energy
+end
+
+function BunkersAnywhere.getCentralRadiusBonus(node, modData)
+    local bonus = 0
+    if node and node.radiusBonus ~= nil then
+        bonus = tonumber(node.radiusBonus) or bonus
+    end
+    if modData and modData.baCentralRadiusBonus ~= nil then
+        bonus = tonumber(modData.baCentralRadiusBonus) or bonus
+    end
+    bonus = math.floor(bonus or 0)
+    if bonus < 0 then bonus = 0 end
+    local maxBonus = BunkersAnywhere.getMaxCentralRadiusUpgradeBonus()
+    if bonus > maxBonus then
+        bonus = maxBonus
+    end
+    return bonus
+end
+
+function BunkersAnywhere.getCentralRadiusUpgradeTiers()
+    local cfg = BunkersAnywhere.InvisibleCentralGenerator or {}
+    local bonuses = cfg.RadiusUpgradeBonuses or {}
+    local costs = cfg.RadiusUpgradeWireCosts or {}
+    local tiers = {}
+    for i = 1, #bonuses do
+        local bonus = math.floor(tonumber(bonuses[i]) or 0)
+        if bonus > 0 then
+            local cost = math.max(1, math.floor(tonumber(costs[i]) or cfg.RadiusUpgradeWireCost or 50))
+            table.insert(tiers, { bonus = bonus, cost = cost })
+        end
+    end
+    table.sort(tiers, function(a, b) return a.bonus < b.bonus end)
+    return tiers
+end
+
+function BunkersAnywhere.getMaxCentralRadiusUpgradeBonus()
+    local tiers = BunkersAnywhere.getCentralRadiusUpgradeTiers()
+    if #tiers <= 0 then
+        return math.max(0, math.floor(tonumber(BunkersAnywhere.InvisibleCentralGenerator.RadiusUpgradeBonus) or 0))
+    end
+    return tiers[#tiers].bonus
+end
+
+function BunkersAnywhere.getNextCentralRadiusUpgrade(currentBonus)
+    local current = math.max(0, math.floor(tonumber(currentBonus) or 0))
+    local tiers = BunkersAnywhere.getCentralRadiusUpgradeTiers()
+    for i = 1, #tiers do
+        if tiers[i].bonus > current then
+            return tiers[i].bonus, tiers[i].cost
+        end
+    end
+    return nil, nil
+end
+
+function BunkersAnywhere.getCentralRemainingMinutes(node, modData)
+    local runtime = nil
+    if node and node.runtimeMinutes ~= nil then
+        runtime = tonumber(node.runtimeMinutes)
+    end
+    if runtime == nil and modData and modData.baCentralRuntimeMinutes ~= nil then
+        runtime = tonumber(modData.baCentralRuntimeMinutes)
+    end
+    if runtime == nil then
+        runtime = BunkersAnywhere.getCentralEnergyPercent(node, modData) * (tonumber(BunkersAnywhere.CentralBattery.MinutesPerPercent) or 4)
+    end
+    runtime = math.floor(runtime or 0)
+    if runtime < 0 then runtime = 0 end
+    return runtime
+end
+
+function BunkersAnywhere.getCentralRemainingMinutesDisplay(node, modData, nodeKey)
+    return BunkersAnywhere.getCentralRemainingMinutes(node, modData)
+end
+
+function BunkersAnywhere.formatCentralRemainingMinutes(minutes)
+    local m = math.floor(tonumber(minutes) or 0)
+    if m < 0 then m = 0 end
+    local h = math.floor(m / 60)
+    local rem = m % 60
+    if h > 0 then
+        return tostring(h) .. "h " .. tostring(rem) .. "m"
+    end
+    return tostring(rem) .. "m"
+end
+
+function BunkersAnywhere.formatCentralRemainingTime(minutes)
+    return BunkersAnywhere.formatCentralRemainingMinutes(minutes)
 end
 
 function BunkersAnywhere.countBatteryTypeAvailable(playerObj, fullType)
@@ -476,12 +577,11 @@ function BunkersAnywhere.refreshOwnedInvisibleGenerators()
     local cell = getCell()
     if not cell then return end
 
-    local basementZ = BunkersAnywhere.InvisibleCentralGenerator.ZLevel
     local store = BunkersAnywhere.getInvisibleGeneratorStore()
     if not store or not store.nodes then return end
 
     for _, node in pairs(store.nodes) do
-        if node and node.z == basementZ then
+        if node then
             BunkersAnywhere.hideGeneratorNearCentralNode(node)
         end
     end
@@ -579,10 +679,6 @@ end
 function BunkersAnywhere.connectInvisibleGeneratorCentral(centralObj, playerObj)
     local sq = centralObj and centralObj:getSquare()
     if not sq then return end
-    if sq:getZ() ~= BunkersAnywhere.InvisibleCentralGenerator.ZLevel then
-        playerObj:setHaloNote(getText("IGUI_Bunker_CentralGeneratorOnlyBasement"), 255, 120, 0, 350)
-        return
-    end
 
     if BunkersAnywhere.isInvisibleGeneratorConnected(centralObj) then
         playerObj:setHaloNote(getText("IGUI_Bunker_CentralGeneratorAlreadyConnected"), 240, 240, 0, 300)
@@ -607,7 +703,7 @@ function BunkersAnywhere.connectInvisibleGeneratorCentral(centralObj, playerObj)
 
     local store = BunkersAnywhere.getInvisibleGeneratorStore()
     local key = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
-    store.nodes[key] = store.nodes[key] or { x = sq:getX(), y = sq:getY(), z = sq:getZ(), active = false, source = true, links = {}, energy = 0, installedBatteries = {} }
+    store.nodes[key] = store.nodes[key] or { x = sq:getX(), y = sq:getY(), z = sq:getZ(), active = false, source = true, links = {}, energy = 0, radiusBonus = 0, installedBatteries = {} }
     store.nodes[key].energy = BunkersAnywhere.getCentralEnergyPercent(store.nodes[key], nil)
     store.nodes[key].active = store.nodes[key].energy > 0
     store.nodes[key].source = true
@@ -629,11 +725,10 @@ end
 function BunkersAnywhere.registerInvisibleGeneratorCentralCandidate(centralObj)
     local sq = centralObj and centralObj:getSquare()
     if not sq then return end
-    if sq:getZ() ~= BunkersAnywhere.InvisibleCentralGenerator.ZLevel then return end
     local store = BunkersAnywhere.getInvisibleGeneratorStore()
     local key = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
     if not (store.nodes and store.nodes[key]) then
-        store.nodes[key] = { x = sq:getX(), y = sq:getY(), z = sq:getZ(), active = true, source = false, links = {}, energy = 0, installedBatteries = {} }
+        store.nodes[key] = { x = sq:getX(), y = sq:getY(), z = sq:getZ(), active = true, source = false, links = {}, energy = 0, radiusBonus = 0, installedBatteries = {} }
         if ModData.transmit then
             ModData.transmit(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
         end
@@ -650,7 +745,6 @@ end
 function BunkersAnywhere.connectInvisibleGeneratorToOtherCentral(centralObj, playerObj, targetX, targetY, targetZ)
     local sq = centralObj and centralObj:getSquare()
     if not sq then return end
-    if targetZ ~= BunkersAnywhere.InvisibleCentralGenerator.ZLevel then return end
 
     local store = BunkersAnywhere.getInvisibleGeneratorStore()
     local elecLevel = BunkersAnywhere.getPlayerElectricityLevel(playerObj)
@@ -691,6 +785,74 @@ function BunkersAnywhere.connectInvisibleGeneratorToOtherCentral(centralObj, pla
     end
 
     playerObj:setHaloNote(getText("IGUI_Bunker_CentralLinkedTo", tostring(targetX), tostring(targetY), tostring(targetZ)), 0, 220, 255, 400)
+end
+
+function BunkersAnywhere.upgradeCentralRadius(centralObj, playerObj)
+    if BunkersAnywhere.InvisibleCentralGenerator.RadiusUpgradeEnabled ~= true then
+        if playerObj and playerObj.setHaloNote then
+            playerObj:setHaloNote("Ampliar central esta deshabilitado temporalmente", 255, 180, 80, 450)
+        end
+        return
+    end
+
+    local sq = centralObj and centralObj:getSquare()
+    if not sq then return end
+
+    local md = centralObj:getModData()
+    local store = BunkersAnywhere.getInvisibleGeneratorStore()
+    local key = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
+    local node = store.nodes and store.nodes[key] or nil
+    local isSource = (node and node.source ~= false) or (md and md.baInvisibleGeneratorIsSource == true)
+    if not isSource then
+        playerObj:setHaloNote("Solo las centrales principales pueden ampliarse", 255, 120, 0, 340)
+        return
+    end
+
+    local currentBonus = BunkersAnywhere.getCentralRadiusBonus(node, md)
+    local nextBonus, need = BunkersAnywhere.getNextCentralRadiusUpgrade(currentBonus)
+    if not nextBonus then
+        playerObj:setHaloNote("La central ya esta ampliada al maximo", 240, 220, 80, 340)
+        return
+    end
+
+    local available = BunkersAnywhere.countElectricWireAvailable(playerObj)
+    if available < need then
+        playerObj:setHaloNote("Necesitas " .. tostring(need) .. " cables (tienes " .. tostring(available) .. ")", 255, 80, 80, 420)
+        return
+    end
+
+    if not BunkersAnywhere.consumeElectricWire(playerObj, need) then
+        playerObj:setHaloNote("No se pudieron consumir los cables necesarios", 255, 80, 80, 350)
+        return
+    end
+
+    local newBonus = nextBonus
+    if node then
+        node.radiusBonus = newBonus
+    end
+    md.baCentralRadiusBonus = newBonus
+    md.baCentralRadius = BunkersAnywhere.InvisibleCentralGenerator.BaseRadius + newBonus
+    if centralObj.transmitModData then
+        centralObj:transmitModData()
+    end
+    if ModData.transmit then
+        ModData.transmit(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
+    end
+
+    if sendClientCommand then
+        sendClientCommand("BunkersAnywhere", "UpgradeCentralRadius", {
+            x = sq:getX(),
+            y = sq:getY(),
+            z = sq:getZ(),
+            clientConsumed = true,
+            wires = need,
+            bonus = newBonus,
+            onlineID = playerObj.getOnlineID and playerObj:getOnlineID() or -1,
+            username = playerObj.getUsername and playerObj:getUsername() or "",
+        })
+    end
+
+    playerObj:setHaloNote("Central ampliada: +" .. tostring(newBonus) .. " tiles de radio", 0, 220, 255, 420)
 end
 
 function BunkersAnywhere.insertCentralBattery(centralObj, playerObj, fullType)
@@ -868,7 +1030,6 @@ end
 function BunkersAnywhere.setInvisibleGeneratorCentralState(centralObj, playerObj, wantOn)
     local sq = centralObj and centralObj:getSquare()
     if not sq then return end
-    if sq:getZ() ~= BunkersAnywhere.InvisibleCentralGenerator.ZLevel then return end
 
     local store = BunkersAnywhere.getInvisibleGeneratorStore()
     local key = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
@@ -940,6 +1101,21 @@ end
 function BunkersAnywhere.onConnectInvisibleGeneratorToOtherCentral(centralObj, playerObj, targetX, targetY, targetZ)
     if luautils.walk(playerObj, centralObj:getSquare()) then
         ISTimedActionQueue.add(ISBunkerAction:new(playerObj, centralObj:getSquare(), 180, "Loot", "LightSwitch", BunkersAnywhere.connectInvisibleGeneratorToOtherCentral, centralObj, playerObj, targetX, targetY, targetZ))
+    end
+end
+
+function BunkersAnywhere.onUpgradeCentralRadius(centralObj, playerObj)
+    if BunkersAnywhere.InvisibleCentralGenerator.RadiusUpgradeEnabled ~= true then
+        if playerObj and playerObj.setHaloNote then
+            playerObj:setHaloNote("Ampliar central esta deshabilitado temporalmente", 255, 180, 80, 450)
+        end
+        return
+    end
+
+    if luautils.walk(playerObj, centralObj:getSquare()) then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, centralObj:getSquare(), 190, "Loot", "LightSwitch", BunkersAnywhere.upgradeCentralRadius, centralObj, playerObj))
+    else
+        BunkersAnywhere.upgradeCentralRadius(centralObj, playerObj)
     end
 end
 
@@ -1054,16 +1230,41 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
     local playerObj = getSpecificPlayer(player)
     if not playerObj then return end
 
+    local storeSnapshot = BunkersAnywhere.getInvisibleGeneratorStore()
+    local function hasNodeOnSquare(sq)
+        if not sq or not storeSnapshot or not storeSnapshot.nodes then return false end
+        local key = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
+        return storeSnapshot.nodes[key] ~= nil
+    end
+
     local centralObj = nil
     local mailObj = nil
+    local firstSq = nil
     local function scanSquareObjects(sq)
         if not sq then return end
+        if not firstSq then firstSq = sq end
         local objects = sq:getObjects()
         if not objects then return end
         for i = 0, objects:size() - 1 do
             local obj = objects:get(i)
-            if not centralObj and BunkersAnywhere.isInvisibleCentralTile(obj) then
-                centralObj = obj
+            if not centralObj then
+                local isCentral = BunkersAnywhere.isInvisibleCentralTile(obj)
+                if not isCentral and hasNodeOnSquare(sq) then
+                    local md = obj and obj.getModData and obj:getModData() or nil
+                    if md and (md.baInvisibleGeneratorConnected ~= nil or md.baInvisibleGeneratorIsSource ~= nil or md.baCentralEnergyPercent ~= nil) then
+                        isCentral = true
+                    end
+                end
+                if not isCentral and hasNodeOnSquare(sq) and obj and obj.getSprite then
+                    local sprite = obj:getSprite()
+                    local sname = sprite and sprite.getName and sprite:getName() or nil
+                    if isCentralSpriteFamilyName(sname) then
+                        isCentral = true
+                    end
+                end
+                if isCentral then
+                    centralObj = obj
+                end
             end
             if not mailObj and BunkersAnywhere.isShippingMailboxTile(obj) then
                 mailObj = obj
@@ -1088,6 +1289,43 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
 
     if not centralObj or not mailObj then
         scanSquareObjects(playerObj:getSquare())
+    end
+
+    if not centralObj then
+        local pSq = playerObj:getSquare()
+        if pSq then
+            for dx = -1, 1 do
+                for dy = -1, 1 do
+                    local sq = getCell():getGridSquare(pSq:getX() + dx, pSq:getY() + dy, pSq:getZ())
+                    scanSquareObjects(sq)
+                    if centralObj then break end
+                end
+                if centralObj then break end
+            end
+        end
+    end
+
+    if not centralObj and getTimestampMs then
+        local now = getTimestampMs()
+        local last = BunkersAnywhere._lastCentralDetectDebugMs or 0
+        if now - last >= 2000 then
+            BunkersAnywhere._lastCentralDetectDebugMs = now
+            local dsq = firstSq or playerObj:getSquare()
+            if dsq then
+                local key = BunkersAnywhere.getInvisibleGeneratorNodeKey(dsq:getX(), dsq:getY(), dsq:getZ())
+                local hasNode = storeSnapshot and storeSnapshot.nodes and storeSnapshot.nodes[key] ~= nil
+                print("[BunkersAnywhere][CentralDetect] no central detected at " .. tostring(dsq:getX()) .. "," .. tostring(dsq:getY()) .. "," .. tostring(dsq:getZ()) .. " node=" .. tostring(hasNode))
+                local objs = dsq:getObjects()
+                if objs then
+                    for i = 0, math.min(objs:size() - 1, 10) do
+                        local o = objs:get(i)
+                        local sp = o and o.getSprite and o:getSprite() or nil
+                        local sn = sp and sp.getName and sp:getName() or "nil"
+                        print("[BunkersAnywhere][CentralDetect] obj#" .. tostring(i) .. " sprite=" .. tostring(sn))
+                    end
+                end
+            end
+        end
     end
 
     if centralObj then
@@ -1140,6 +1378,16 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
         else
             local info = context:addOption("Energia central: " .. tostring(energyPercent) .. "%")
             info.notAvailable = true
+            local remainingMinutes = BunkersAnywhere.getCentralRemainingMinutesDisplay(currentNode, md, currentKey)
+            local timeInfo = context:addOption("Tiempo restante: " .. BunkersAnywhere.formatCentralRemainingTime(remainingMinutes))
+            timeInfo.notAvailable = true
+            local radiusBonus = BunkersAnywhere.getCentralRadiusBonus(currentNode, md)
+            local radiusValue = BunkersAnywhere.InvisibleCentralGenerator.BaseRadius + radiusBonus
+            local radiusInfo = context:addOption("Radio central: " .. tostring(radiusValue) .. " tiles")
+            radiusInfo.notAvailable = true
+
+            local upgradeDisabled = context:addOption("Ampliar central (temporalmente deshabilitado)")
+            upgradeDisabled.notAvailable = true
 
             if energyPercent < BunkersAnywhere.CentralBattery.MaxEnergy then
                 context:addOption("Cargar bateria automaticamente", centralObj, BunkersAnywhere.onInsertAnyCentralBattery, playerObj)
@@ -1210,7 +1458,7 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
         local connectSub = nil
         local connectSubCtx = nil
         for _, node in pairs(store.nodes) do
-            if node and node.z == BunkersAnywhere.InvisibleCentralGenerator.ZLevel then
+            if node then
                 if not (node.x == sqCentral:getX() and node.y == sqCentral:getY() and node.z == sqCentral:getZ()) then
                     local targetIsSource = (node.source ~= false)
                     local targetEnergy = BunkersAnywhere.getCentralEnergyPercent(node, nil)
@@ -1333,6 +1581,119 @@ local function BunkersAnywhereCentralWorldContextSafe(player, context, worldobje
 end
 
 Events.OnFillWorldObjectContextMenu.Add(BunkersAnywhereCentralWorldContextSafe)
+
+local function findCentralObjectOnSquare(square)
+    if not square then return nil end
+    local objects = square:getObjects()
+    if not objects then return nil end
+    for i = 0, objects:size() - 1 do
+        local obj = objects:get(i)
+        if BunkersAnywhere.isInvisibleCentralTile(obj) then
+            return obj
+        end
+        local md = obj and obj.getModData and obj:getModData() or nil
+        if md and (md.baInvisibleGeneratorConnected ~= nil or md.baInvisibleGeneratorIsSource ~= nil or md.baCentralEnergyPercent ~= nil) then
+            return obj
+        end
+        if obj and obj.getSprite then
+            local sp = obj:getSprite()
+            local sn = sp and sp.getName and sp:getName() or nil
+            if sn and string.match(sn, "^location_business_bank_01_") then
+                return obj
+            end
+        end
+    end
+    return nil
+end
+
+local function worldToScreen(playerIndex, x, y, z)
+    if isoToScreenX and isoToScreenY then
+        local okX, sx = pcall(function() return isoToScreenX(playerIndex, x, y, z) end)
+        local okY, sy = pcall(function() return isoToScreenY(playerIndex, x, y, z) end)
+        if okX and okY and sx and sy then
+            return sx, sy
+        end
+    end
+    if IsoUtils and IsoUtils.XToScreen and IsoUtils.YToScreen then
+        local okX, sx = pcall(function() return IsoUtils.XToScreen(x, y, z, 0) end)
+        local okY, sy = pcall(function() return IsoUtils.YToScreen(x, y, z, 0) end)
+        if okX and okY and sx and sy then
+            return sx, sy
+        end
+    end
+    return nil, nil
+end
+
+local function canDrawCentralOverlayAtNode(node, playerX, playerY, playerZ, maxDistSq)
+    if not node then return false end
+    if node.z ~= playerZ then return false end
+    local dx = node.x - playerX
+    local dy = node.y - playerY
+    local distSq = dx * dx + dy * dy
+    return distSq <= maxDistSq
+end
+
+local function getCentralOverlayTextAndColor(node, md)
+    local nodeKey = BunkersAnywhere.getInvisibleGeneratorNodeKey(node.x, node.y, node.z)
+    local remaining = BunkersAnywhere.getCentralRemainingMinutesDisplay(node, md, nodeKey)
+    local text = "Central: " .. BunkersAnywhere.formatCentralRemainingTime(remaining)
+    local active = (node.active == true) and remaining > 0
+    local r, g, b = 1.0, 0.85, 0.25
+    if active then
+        r, g, b = 0.25, 1.0, 0.35
+    end
+    return text, r, g, b
+end
+
+local function drawCentralOverlayAtNode(tm, core, node, md)
+    local text, r, g, b = getCentralOverlayTextAndColor(node, md)
+    local sx, sy = worldToScreen(0, node.x + 0.5, node.y + 0.5, node.z + 1.15)
+    if not sx or not sy then return end
+    if sx < -200 or sx > core:getScreenWidth() + 200 or sy < -200 or sy > core:getScreenHeight() + 200 then return end
+    -- Slightly right and lower so it stays close to the central tile.
+    tm:DrawStringCentre(UIFont.Small, sx + 18, sy - 10, text, r, g, b, 0.95)
+end
+
+local function BunkersAnywhereDrawCentralRuntimeOverlay()
+    local playerObj = getSpecificPlayer(0)
+    if not playerObj then return end
+    local pSq = playerObj:getSquare()
+    if not pSq then return end
+    local cell = getCell()
+    if not cell then return end
+    local tm = getTextManager and getTextManager() or nil
+    local core = getCore and getCore() or nil
+    if not tm or not core then return end
+
+    local store = BunkersAnywhere.getInvisibleGeneratorStore()
+    if not store or not store.nodes then return end
+    local px, py, pz = pSq:getX(), pSq:getY(), pSq:getZ()
+    local maxDistSq = 20 * 20
+    for _, node in pairs(store.nodes) do
+        if node and node.source ~= false and canDrawCentralOverlayAtNode(node, px, py, pz, maxDistSq) then
+            local sq = cell:getGridSquare(node.x, node.y, node.z)
+            local centralObj = findCentralObjectOnSquare(sq)
+            local md = centralObj and centralObj.getModData and centralObj:getModData() or nil
+            drawCentralOverlayAtNode(tm, core, node, md)
+        end
+    end
+end
+
+local function BunkersAnywhereDrawCentralRuntimeOverlaySafe()
+    local ok, err = pcall(BunkersAnywhereDrawCentralRuntimeOverlay)
+    if not ok then
+        local now = getTimestampMs and getTimestampMs() or 0
+        local last = BunkersAnywhere._lastCentralOverlayErrorMs or 0
+        if now == 0 or now - last > 3000 then
+            BunkersAnywhere._lastCentralOverlayErrorMs = now
+            print("[BunkersAnywhere] Central runtime overlay error: " .. tostring(err))
+        end
+    end
+end
+
+if Events.OnPostUIDraw then
+    Events.OnPostUIDraw.Add(BunkersAnywhereDrawCentralRuntimeOverlaySafe)
+end
 
 local function BunkersAnywhereOnServerCommand(module, command, args)
     if module ~= "BunkersAnywhere" then return end

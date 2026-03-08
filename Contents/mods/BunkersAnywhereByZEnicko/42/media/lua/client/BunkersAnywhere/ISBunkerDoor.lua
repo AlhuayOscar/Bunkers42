@@ -20,50 +20,163 @@ end
 -- Central system moved to ISBunkerCentral.lua
 
 function BunkersAnywhere.teleportToZ(playerObj, newZ, targetX, targetY)
-    if playerObj and newZ ~= nil and targetX ~= nil and targetY ~= nil then
-        local cell = getCell()
-        local targetSq = cell:getGridSquare(math.floor(targetX), math.floor(targetY), newZ)
-        
-        -- Centramos al jugador EXACTAMENTE en la escalera/tapa de destino
-        playerObj:setX(math.floor(targetX) + 0.5)
-        playerObj:setY(math.floor(targetY) + 0.5)
-        playerObj:setZ(newZ)
-        
-        -- Forzamos la actualizaciÃ³n de coordenadas "last" para evitar interpolaciones raras en MP
-        playerObj:setLx(playerObj:getX())
-        playerObj:setLy(playerObj:getY())
-        playerObj:setLz(playerObj:getZ())
-        
-        if targetSq then
-            playerObj:setCurrent(targetSq)
-        end
+    if not playerObj or type(newZ) ~= "number" or type(targetX) ~= "number" or type(targetY) ~= "number" then return end
+
+    local tx = math.floor(targetX)
+    local ty = math.floor(targetY)
+
+    -- Centramos al jugador EXACTAMENTE en la escalera/tapa de destino.
+    if type(playerObj.setX) == "function" then pcall(function() playerObj:setX(tx + 0.5) end) end
+    if type(playerObj.setY) == "function" then pcall(function() playerObj:setY(ty + 0.5) end) end
+    if type(playerObj.setZ) == "function" then pcall(function() playerObj:setZ(newZ) end) end
+
+    -- Forzamos actualizacion de coordenadas "last" solo si la API existe.
+    if type(playerObj.getX) == "function" and type(playerObj.setLx) == "function" then
+        local okX, px = pcall(function() return playerObj:getX() end)
+        if okX then pcall(function() playerObj:setLx(px) end) end
+    end
+    if type(playerObj.getY) == "function" and type(playerObj.setLy) == "function" then
+        local okY, py = pcall(function() return playerObj:getY() end)
+        if okY then pcall(function() playerObj:setLy(py) end) end
+    end
+    if type(playerObj.getZ) == "function" and type(playerObj.setLz) == "function" then
+        local okZ, pz = pcall(function() return playerObj:getZ() end)
+        if okZ then pcall(function() playerObj:setLz(pz) end) end
+    end
+
+    local targetSq = nil
+    local cell = getCell and getCell() or nil
+    if cell and type(cell.getGridSquare) == "function" then
+        local okSq, sq = pcall(function() return cell:getGridSquare(tx, ty, newZ) end)
+        if okSq then targetSq = sq end
+    end
+
+    if targetSq and type(playerObj.setCurrent) == "function" then
+        pcall(function() playerObj:setCurrent(targetSq) end)
     end
 end
-
 function BunkersAnywhere.canTeleportTo(sqX, sqY, targetZ)
+    if type(sqX) ~= "number" or type(sqY) ~= "number" or type(targetZ) ~= "number" then return false end
     if targetZ < -32 or targetZ > 7 then return false end
-    
-    local square = getCell():getGridSquare(sqX, sqY, targetZ)
-    
-    if square then
-        if square:getFloor() ~= nil or square:getRoom() ~= nil then
-            -- Verificar si el tile destino esta libre de solidos (paredes, mueles, etc.)
-            local objs = square:getObjects()
-            for i = 0, objs:size() - 1 do
-                local o = objs:get(i)
-                if o:getProperties() and (o:getProperties():Is(IsoFlagType.solid) or o:getProperties():Is(IsoFlagType.solidtrans)) then
-                    -- Ignorar los objetos del mismo mod u otras puertas, para no bloquear
-                    if not (o.getModData and o:getModData() and o:getModData().bunkerType) then
-                        return false
-                    end
+
+    local cell = getCell and getCell() or nil
+    if not cell then return false end
+
+    local okSquare, square = pcall(function()
+        return cell:getGridSquare(math.floor(sqX), math.floor(sqY), targetZ)
+    end)
+    if not okSquare or not square then return false end
+
+    if square:getFloor() == nil and square:getRoom() == nil then return false end
+
+    -- Verificar si el tile destino esta libre de solidos (paredes, muebles, etc.)
+    local objs = square:getObjects()
+    if not objs then return true end
+
+    local solidFlag = IsoFlagType and IsoFlagType.solid or nil
+    local solidTransFlag = IsoFlagType and IsoFlagType.solidtrans or nil
+
+    for i = 0, objs:size() - 1 do
+        local o = objs:get(i)
+        if o then
+            local props = nil
+            if type(o.getProperties) == "function" then
+                local okProps, resultProps = pcall(function() return o:getProperties() end)
+                if okProps then props = resultProps end
+            end
+
+            local isSolid = false
+            if props and type(props.Is) == "function" then
+                if solidFlag then
+                    local okSolid, hasSolid = pcall(function() return props:Is(solidFlag) end)
+                    if okSolid and hasSolid then isSolid = true end
+                end
+                if (not isSolid) and solidTransFlag then
+                    local okSolidTrans, hasSolidTrans = pcall(function() return props:Is(solidTransFlag) end)
+                    if okSolidTrans and hasSolidTrans then isSolid = true end
                 end
             end
-            return true
+
+            if isSolid then
+                -- Ignorar los objetos del mismo mod, para no bloquear.
+                local isBunkerObject = false
+                if type(o.getModData) == "function" then
+                    local okModData, md = pcall(function() return o:getModData() end)
+                    if okModData and md and md.bunkerType then
+                        isBunkerObject = true
+                    end
+                end
+                if not isBunkerObject then
+                    return false
+                end
+            end
         end
     end
-    return false
+
+    return true
 end
 
+function BunkersAnywhere.findDestination(fromSq, newZ, destType)
+    if not fromSq or type(newZ) ~= "number" then return nil, nil end
+
+    local cell = getCell and getCell() or nil
+    if not cell then return nil, nil end
+
+    local baseX = fromSq:getX()
+    local baseY = fromSq:getY()
+
+    local function findOnSquare(sq)
+        if not sq then return nil, nil end
+        local objs = sq:getObjects()
+        if not objs then return nil, nil end
+
+        for i = 0, objs:size() - 1 do
+            local o = objs:get(i)
+            if o and type(o.getModData) == "function" then
+                local okMd, md = pcall(function() return o:getModData() end)
+                if okMd and md and md.bunkerType == destType then
+                    return sq:getX() + 0.5, sq:getY() + 0.5
+                end
+            end
+        end
+
+        return nil, nil
+    end
+
+    local okSame, sameSq = pcall(function() return cell:getGridSquare(baseX, baseY, newZ) end)
+    if okSame and sameSq then
+        local dx, dy = findOnSquare(sameSq)
+        if dx and dy then return dx, dy end
+    end
+
+    for radius = 1, 2 do
+        for x = baseX - radius, baseX + radius do
+            for y = baseY - radius, baseY + radius do
+                local okSq, sq = pcall(function() return cell:getGridSquare(x, y, newZ) end)
+                if okSq and sq then
+                    local dx, dy = findOnSquare(sq)
+                    if dx and dy then return dx, dy end
+                end
+            end
+        end
+    end
+
+    if BunkersAnywhere.canTeleportTo(baseX, baseY, newZ) then
+        return baseX + 0.5, baseY + 0.5
+    end
+
+    for radius = 1, 3 do
+        for x = baseX - radius, baseX + radius do
+            for y = baseY - radius, baseY + radius do
+                if BunkersAnywhere.canTeleportTo(x, y, newZ) then
+                    return x + 0.5, y + 0.5
+                end
+            end
+        end
+    end
+
+    return nil, nil
+end
 -- FunciÃ³n para colocar objetos en el mundo
 function BunkersAnywhere.placeObject(worldobjects, playerObj, item, objName, zDir)
     local sq = playerObj:getSquare()
@@ -427,31 +540,51 @@ function BunkersAnywhere.onInstallBunkerKit(stairObj, playerObj)
 end
 
 function BunkersAnywhere.onTeleport(targetObj, playerObj, newZ)
+    if not targetObj or not playerObj or type(newZ) ~= "number" then return end
+
     local targetSq = targetObj:getSquare()
+    if not targetSq then return end
+
     local x, y, z = targetSq:getX(), targetSq:getY(), targetSq:getZ()
-    local bType = targetObj:getModData().bunkerType
-    
+
+    local md = nil
+    if type(targetObj.getModData) == "function" then
+        local okMd, resultMd = pcall(function() return targetObj:getModData() end)
+        if okMd then md = resultMd end
+    end
+    local bType = md and md.bunkerType or nil
+    if not bType then return end
+
     local destType = (bType == "Entrada de Bunker") and "Escalera de Bunker" or "Entrada de Bunker"
     local destX, destY = BunkersAnywhere.findDestination(targetSq, newZ, destType)
-    
+    if not destX or not destY then
+        playerObj:setHaloNote(getText("IGUI_Bunker_NoFloorTarget"), 255, 0, 0, 350)
+        return
+    end
+
     local pSq = playerObj:getCurrentSquare()
     local sameZ = math.abs(playerObj:getZ() - z) < 0.5
     local distX = math.abs(playerObj:getX() - (x + 0.5))
     local distY = math.abs(playerObj:getY() - (y + 0.5))
     local blocked = false
-    
+
     if pSq and targetSq and pSq ~= targetSq then
-        blocked = pSq:isBlockedTo(targetSq)
+        if type(pSq.isBlockedTo) == "function" then
+            local okBlocked, isBlocked = pcall(function() return pSq:isBlockedTo(targetSq) end)
+            if okBlocked and isBlocked then blocked = true end
+        end
     end
-    
+
     -- Si estamos en un tile adyacente o en el mismo, interceptamos para no caminar
     if distX < 1.5 and distY < 1.5 and sameZ then
         if blocked then
             -- Si esta bloqueado (ej: separado por pared o barandilla), simplemente salimos.
-            -- Asi presionando 'E' el personaje no saltarÃ¡ ni correrÃ¡ hacia otra escalera.
+            -- Asi presionando 'E' el personaje no saltara ni correra hacia otra escalera.
             return
         end
-        playerObj:faceThisObject(targetObj)
+        if type(playerObj.faceThisObject) == "function" then
+            playerObj:faceThisObject(targetObj)
+        end
         ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ, destX, destY))
     else
         -- Desde lejos (click derecho), usamos walk normal
@@ -460,7 +593,6 @@ function BunkersAnywhere.onTeleport(targetObj, playerObj, newZ)
         end
     end
 end
-
 function BunkersAnywhere.onRemove(targetObj, playerObj, itemFullType)
     if luautils.walk(playerObj, targetObj:getSquare()) then
         ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetObj:getSquare(), 150, "Loot", "Carpentry", BunkersAnywhere.removeObject, targetObj, playerObj, itemFullType))
@@ -629,7 +761,12 @@ local function BunkersAnywhereOnKeyPressed(key)
                         local md = obj:getModData()
                         if md and md.bunkerType then
                             -- Confirmar que esten en la misma casilla o no esten separados por paredes fisicas
-                            if sq == searchSq or not sq:isBlockedTo(searchSq) then
+                            local canUse = (sq == searchSq)
+                            if (not canUse) and type(sq.isBlockedTo) == "function" then
+                                local okBlocked, isBlocked = pcall(function() return sq:isBlockedTo(searchSq) end)
+                                canUse = (okBlocked and not isBlocked) or (not okBlocked)
+                            end
+                            if canUse then
                                 targetObj = obj
                                 break
                             end
