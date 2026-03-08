@@ -23,6 +23,7 @@ BunkersAnywhere.ShippingMailbox = {
 BunkersAnywhere.CentralBattery = {
     MaxEnergy = 100,
     MaxUses = 3,
+    MaxRuntimeMinutes = 10080,
     MinutesPerPercent = 4,
     Types = {
         "Base.CarBattery",
@@ -31,10 +32,16 @@ BunkersAnywhere.CentralBattery = {
         "Base.CarBattery3",
     },
     ChargeByType = {
-        ["Base.CarBattery"] = 10,
-        ["Base.CarBattery1"] = 10,
-        ["Base.CarBattery2"] = 15,
-        ["Base.CarBattery3"] = 20,
+        ["Base.CarBattery"] = 15,
+        ["Base.CarBattery1"] = 29,
+        ["Base.CarBattery2"] = 29,
+        ["Base.CarBattery3"] = 100,
+    },
+    RuntimeMinutesByType = {
+        ["Base.CarBattery"] = 1440,
+        ["Base.CarBattery1"] = 2880,
+        ["Base.CarBattery2"] = 2880,
+        ["Base.CarBattery3"] = 10080,
     },
 }
 
@@ -129,10 +136,29 @@ function BunkersAnywhere.getCentralBatteryCharge(fullType)
     end
 
     -- Fallback for modded batteries with same naming family.
-    if shortType == "CarBattery" then return 10 end
-    if shortType == "CarBattery1" then return 10 end
-    if shortType == "CarBattery2" then return 15 end
-    if shortType == "CarBattery3" then return 20 end
+    if shortType == "CarBattery" then return 15 end
+    if shortType == "CarBattery1" then return 29 end
+    if shortType == "CarBattery2" then return 29 end
+    if shortType == "CarBattery3" then return 100 end
+    return 0
+end
+
+function BunkersAnywhere.getCentralBatteryRuntimeMinutes(fullType)
+    if not fullType then return 0 end
+    local runtime = BunkersAnywhere.CentralBattery.RuntimeMinutesByType[fullType]
+    if runtime then
+        return math.max(0, math.floor(tonumber(runtime) or 0))
+    end
+
+    local shortType = BunkersAnywhere.getShortTypeFromFullType(fullType)
+    if shortType then
+        for key, value in pairs(BunkersAnywhere.CentralBattery.RuntimeMinutesByType) do
+            if BunkersAnywhere.getShortTypeFromFullType(key) == shortType then
+                return math.max(0, math.floor(tonumber(value) or 0))
+            end
+        end
+    end
+
     return 0
 end
 
@@ -213,7 +239,12 @@ function BunkersAnywhere.getCentralRemainingMinutes(node, modData)
         runtime = tonumber(modData.baCentralRuntimeMinutes)
     end
     if runtime == nil then
-        runtime = BunkersAnywhere.getCentralEnergyPercent(node, modData) * (tonumber(BunkersAnywhere.CentralBattery.MinutesPerPercent) or 4)
+        local maxRuntime = math.floor(tonumber(BunkersAnywhere.CentralBattery.MaxRuntimeMinutes) or 0)
+        if maxRuntime > 0 then
+            runtime = math.floor((BunkersAnywhere.getCentralEnergyPercent(node, modData) / BunkersAnywhere.CentralBattery.MaxEnergy) * maxRuntime)
+        else
+            runtime = BunkersAnywhere.getCentralEnergyPercent(node, modData) * (tonumber(BunkersAnywhere.CentralBattery.MinutesPerPercent) or 4)
+        end
     end
     runtime = math.floor(runtime or 0)
     if runtime < 0 then runtime = 0 end
@@ -292,9 +323,9 @@ end
 
 function BunkersAnywhere.getCentralBatteryUseLabel(uses)
     local n = math.floor(tonumber(uses) or 1)
-    if n <= 1 then return "Buen estado" end
-    if n == 2 then return "Usada" end
-    return "Malgastada"
+    if n <= 1 then return getText("IGUI_Bunker_BatteryStateGood") end
+    if n == 2 then return getText("IGUI_Bunker_BatteryStateUsed") end
+    return getText("IGUI_Bunker_BatteryStateWorn")
 end
 
 function BunkersAnywhere.getInstalledCentralBatteriesForMenu(currentNode, modData)
@@ -687,7 +718,7 @@ function BunkersAnywhere.connectInvisibleGeneratorCentral(centralObj, playerObj)
     local elecLevel = BunkersAnywhere.getPlayerElectricityLevel(playerObj)
     local needLevel = BunkersAnywhere.CentralSkill.MinElectricityToConnect
     if elecLevel < needLevel then
-        playerObj:setHaloNote("Necesitas Electricidad " .. tostring(needLevel) .. " (tienes " .. tostring(elecLevel) .. ")", 255, 120, 0, 380)
+        playerObj:setHaloNote(getText("IGUI_Bunker_NeedElectricityLevel", tostring(needLevel), tostring(elecLevel)), 255, 120, 0, 380)
         return
     end
 
@@ -750,7 +781,7 @@ function BunkersAnywhere.connectInvisibleGeneratorToOtherCentral(centralObj, pla
     local elecLevel = BunkersAnywhere.getPlayerElectricityLevel(playerObj)
     local needLevel = BunkersAnywhere.CentralSkill.MinElectricityToConnect
     if elecLevel < needLevel then
-        playerObj:setHaloNote("Necesitas Electricidad " .. tostring(needLevel) .. " (tienes " .. tostring(elecLevel) .. ")", 255, 120, 0, 380)
+        playerObj:setHaloNote(getText("IGUI_Bunker_NeedElectricityLevel", tostring(needLevel), tostring(elecLevel)), 255, 120, 0, 380)
         return
     end
     local keyA = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
@@ -790,7 +821,7 @@ end
 function BunkersAnywhere.upgradeCentralRadius(centralObj, playerObj)
     if BunkersAnywhere.InvisibleCentralGenerator.RadiusUpgradeEnabled ~= true then
         if playerObj and playerObj.setHaloNote then
-            playerObj:setHaloNote("Ampliar central esta deshabilitado temporalmente", 255, 180, 80, 450)
+            playerObj:setHaloNote(getText("IGUI_Bunker_CentralUpgradeDisabled"), 255, 180, 80, 450)
         end
         return
     end
@@ -811,13 +842,13 @@ function BunkersAnywhere.upgradeCentralRadius(centralObj, playerObj)
     local currentBonus = BunkersAnywhere.getCentralRadiusBonus(node, md)
     local nextBonus, need = BunkersAnywhere.getNextCentralRadiusUpgrade(currentBonus)
     if not nextBonus then
-        playerObj:setHaloNote("La central ya esta ampliada al maximo", 240, 220, 80, 340)
+        playerObj:setHaloNote(getText("IGUI_Bunker_CentralUpgradeMax"), 240, 220, 80, 340)
         return
     end
 
     local available = BunkersAnywhere.countElectricWireAvailable(playerObj)
     if available < need then
-        playerObj:setHaloNote("Necesitas " .. tostring(need) .. " cables (tienes " .. tostring(available) .. ")", 255, 80, 80, 420)
+        playerObj:setHaloNote(getText("IGUI_Bunker_CentralNeedWiresSimple", tostring(need), tostring(available)), 255, 80, 80, 420)
         return
     end
 
@@ -866,16 +897,16 @@ function BunkersAnywhere.insertCentralBattery(centralObj, playerObj, fullType)
     local energy = BunkersAnywhere.getCentralEnergyPercent(node, md)
     local charge = BunkersAnywhere.getCentralBatteryCharge(fullType)
     if charge <= 0 then
-        playerObj:setHaloNote("Bateria no valida para esta central", 255, 120, 0, 300)
+        playerObj:setHaloNote(getText("IGUI_Bunker_CentralInvalidBattery"), 255, 120, 0, 300)
         return
     end
     if energy + charge > BunkersAnywhere.CentralBattery.MaxEnergy then
-        playerObj:setHaloNote("No puedes superar 100% (" .. tostring(energy) .. "% + " .. tostring(charge) .. "%)", 255, 120, 0, 380)
+        playerObj:setHaloNote(getText("IGUI_Bunker_CentralWouldExceed", tostring(energy), tostring(charge)), 255, 120, 0, 380)
         return
     end
     local consumedFullType, consumedCharge, consumedUses = BunkersAnywhere.consumeCentralBatteryFromPlayerInventory(playerObj, fullType, BunkersAnywhere.CentralBattery.MaxEnergy - energy)
     if not consumedFullType or consumedCharge <= 0 then
-        playerObj:setHaloNote("No tienes una bateria compatible para insertar", 255, 120, 0, 320)
+        playerObj:setHaloNote(getText("IGUI_Bunker_CentralNoCompatibleBattery"), 255, 120, 0, 320)
         return
     end
 
@@ -903,13 +934,13 @@ function BunkersAnywhere.insertAnyCentralBattery(centralObj, playerObj)
     local energy = BunkersAnywhere.getCentralEnergyPercent(node, md)
     local headroom = BunkersAnywhere.CentralBattery.MaxEnergy - energy
     if headroom <= 0 then
-        playerObj:setHaloNote("La central ya esta al 100%", 255, 180, 120, 280)
+        playerObj:setHaloNote(getText("IGUI_Bunker_CentralAlreadyFull"), 255, 180, 120, 280)
         return
     end
 
     local consumedFullType, consumedCharge, consumedUses = BunkersAnywhere.consumeCentralBatteryFromPlayerInventory(playerObj, "AUTO", headroom)
     if not consumedFullType or consumedCharge <= 0 then
-        playerObj:setHaloNote("No tienes una bateria compatible para insertar sin superar 100%", 255, 120, 0, 350)
+        playerObj:setHaloNote(getText("IGUI_Bunker_CentralNoCompatibleBatteryHeadroom"), 255, 120, 0, 350)
         return
     end
 
@@ -1043,7 +1074,7 @@ function BunkersAnywhere.setInvisibleGeneratorCentralState(centralObj, playerObj
     local isSource = (node and node.source ~= false) or (md and md.baInvisibleGeneratorIsSource == true)
     local energy = BunkersAnywhere.getCentralEnergyPercent(node, md)
     if wantOn and isSource and energy <= 0 then
-        playerObj:setHaloNote("La central no tiene energia (0%). Inserta una bateria.", 255, 120, 0, 350)
+        playerObj:setHaloNote(getText("IGUI_Bunker_CentralNoEnergyInsertBattery"), 255, 120, 0, 350)
         return
     end
     local current = (node and node.active == true) or (md and md.baInvisibleGeneratorLocalOn == true) or false
@@ -1107,7 +1138,7 @@ end
 function BunkersAnywhere.onUpgradeCentralRadius(centralObj, playerObj)
     if BunkersAnywhere.InvisibleCentralGenerator.RadiusUpgradeEnabled ~= true then
         if playerObj and playerObj.setHaloNote then
-            playerObj:setHaloNote("Ampliar central esta deshabilitado temporalmente", 255, 180, 80, 450)
+            playerObj:setHaloNote(getText("IGUI_Bunker_CentralUpgradeDisabled"), 255, 180, 80, 450)
         end
         return
     end
@@ -1373,37 +1404,39 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
                 connectOpt.toolTip = ISToolTip:new()
                 connectOpt.toolTip:initialise()
                 connectOpt.toolTip:setVisible(false)
-                connectOpt.toolTip.description = "Requiere Electricidad " .. tostring(needElec) .. " (actual " .. tostring(elecLevel) .. ")"
+                connectOpt.toolTip.description = getText("ContextMenu_CentralNeedElectricityLevel", tostring(needElec), tostring(elecLevel))
             end
         else
-            local info = context:addOption("Energia central: " .. tostring(energyPercent) .. "%")
+            local info = context:addOption(getText("ContextMenu_CentralEnergy", tostring(energyPercent)))
             info.notAvailable = true
             local remainingMinutes = BunkersAnywhere.getCentralRemainingMinutesDisplay(currentNode, md, currentKey)
-            local timeInfo = context:addOption("Tiempo restante: " .. BunkersAnywhere.formatCentralRemainingTime(remainingMinutes))
+            local timeInfo = context:addOption(getText("ContextMenu_CentralTimeRemaining", BunkersAnywhere.formatCentralRemainingTime(remainingMinutes)))
             timeInfo.notAvailable = true
             local radiusBonus = BunkersAnywhere.getCentralRadiusBonus(currentNode, md)
             local radiusValue = BunkersAnywhere.InvisibleCentralGenerator.BaseRadius + radiusBonus
-            local radiusInfo = context:addOption("Radio central: " .. tostring(radiusValue) .. " tiles")
+            local radiusInfo = context:addOption(getText("ContextMenu_CentralRadius", tostring(radiusValue)))
             radiusInfo.notAvailable = true
 
-            local upgradeDisabled = context:addOption("Ampliar central (temporalmente deshabilitado)")
+            local upgradeDisabled = context:addOption(getText("ContextMenu_CentralUpgradeDisabled"))
             upgradeDisabled.notAvailable = true
 
             if energyPercent < BunkersAnywhere.CentralBattery.MaxEnergy then
-                context:addOption("Cargar bateria automaticamente", centralObj, BunkersAnywhere.onInsertAnyCentralBattery, playerObj)
+                context:addOption(getText("ContextMenu_CentralAutoLoadBattery"), centralObj, BunkersAnywhere.onInsertAnyCentralBattery, playerObj)
             end
 
-            local addSub = context:addOption("Cargar central con bateria")
+            local addSub = context:addOption(getText("ContextMenu_CentralLoadWithBattery"))
             local addSubCtx = ISContextMenu:getNew(context)
             context:addSubMenu(addSub, addSubCtx)
             local hasInsertOption = false
 
             for _, fullType in ipairs(BunkersAnywhere.CentralBattery.Types) do
                 local charge = BunkersAnywhere.getCentralBatteryCharge(fullType)
+                local runtimeMinutes = BunkersAnywhere.getCentralBatteryRuntimeMinutes(fullType)
                 local shortType = BunkersAnywhere.getShortTypeFromFullType(fullType) or fullType
                 local have = BunkersAnywhere.countBatteryTypeAvailable(playerObj, fullType)
                 local after = energyPercent + charge
-                local label = "Insertar " .. shortType .. " (+" .. tostring(charge) .. "%) [" .. tostring(have) .. "]"
+                local runtimeLabel = BunkersAnywhere.formatCentralRemainingTime(runtimeMinutes)
+                local label = getText("ContextMenu_CentralInsertBattery", tostring(shortType), tostring(runtimeLabel), tostring(have))
                 local opt = addSubCtx:addOption(label, centralObj, BunkersAnywhere.onInsertCentralBattery, playerObj, fullType)
 
                 if charge <= 0 or after > BunkersAnywhere.CentralBattery.MaxEnergy then
@@ -1412,9 +1445,9 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
                     opt.toolTip:initialise()
                     opt.toolTip:setVisible(false)
                     if after > BunkersAnywhere.CentralBattery.MaxEnergy then
-                        opt.toolTip.description = "Supera 100% (" .. tostring(energyPercent) .. "% + " .. tostring(charge) .. "%)"
+                        opt.toolTip.description = getText("ContextMenu_CentralWouldExceed", tostring(energyPercent), tostring(charge))
                     else
-                        opt.toolTip.description = "Bateria no valida"
+                        opt.toolTip.description = getText("ContextMenu_CentralInvalidBattery")
                     end
                 else
                     hasInsertOption = true
@@ -1429,7 +1462,7 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
 
         local installed = BunkersAnywhere.getInstalledCentralBatteriesForMenu(currentNode, md)
         if installed and #installed > 0 then
-            local removeSub = context:addOption("Retirar bateria de central")
+            local removeSub = context:addOption(getText("ContextMenu_CentralRemoveBattery"))
             local removeSubCtx = ISContextMenu:getNew(context)
             context:addSubMenu(removeSub, removeSubCtx)
 
@@ -1439,16 +1472,16 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
                 removeSub.toolTip = ISToolTip:new()
                 removeSub.toolTip:initialise()
                 removeSub.toolTip:setVisible(false)
-                removeSub.toolTip.description = "Apaga la central para retirar baterias"
+                removeSub.toolTip.description = getText("ContextMenu_CentralTurnOffToRemoveBattery")
             else
                 for idx, entry in ipairs(installed) do
                     local uses = math.floor(tonumber(entry and entry.uses) or 1)
                     local full = (entry and entry.fullType) or "Base.CarBattery"
                     local short = BunkersAnywhere.getShortTypeFromFullType(full) or full
                     local state = BunkersAnywhere.getCentralBatteryUseLabel(uses)
-                    local label = "Retirar " .. tostring(short) .. " [" .. tostring(state) .. "]"
+                    local label = getText("ContextMenu_CentralRemoveBatteryEntry", tostring(short), tostring(state))
                     if uses >= BunkersAnywhere.CentralBattery.MaxUses then
-                        label = label .. " -> Chatarra"
+                        label = getText("ContextMenu_CentralRemoveBatteryScrap", tostring(label))
                     end
                     removeSubCtx:addOption(label, centralObj, BunkersAnywhere.onRemoveCentralBattery, playerObj, idx)
                 end
@@ -1484,7 +1517,7 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
                             opt.toolTip.description = getText("IGUI_Bunker_CentralNeedWire", tostring(need), tostring(have))
                             if elecLevel < needElec then
                                 opt.notAvailable = true
-                                opt.toolTip.description = "Requiere Electricidad " .. tostring(needElec) .. " (actual " .. tostring(elecLevel) .. ")"
+                                opt.toolTip.description = getText("ContextMenu_CentralNeedElectricityLevel", tostring(needElec), tostring(elecLevel))
                             elseif have < need then
                                 opt.notAvailable = true
                             end
@@ -1636,7 +1669,7 @@ end
 local function getCentralOverlayTextAndColor(node, md)
     local nodeKey = BunkersAnywhere.getInvisibleGeneratorNodeKey(node.x, node.y, node.z)
     local remaining = BunkersAnywhere.getCentralRemainingMinutesDisplay(node, md, nodeKey)
-    local text = "Central: " .. BunkersAnywhere.formatCentralRemainingTime(remaining)
+    local text = getText("IGUI_Bunker_CentralOverlay", BunkersAnywhere.formatCentralRemainingTime(remaining))
     local active = (node.active == true) and remaining > 0
     local r, g, b = 1.0, 0.85, 0.25
     if active then

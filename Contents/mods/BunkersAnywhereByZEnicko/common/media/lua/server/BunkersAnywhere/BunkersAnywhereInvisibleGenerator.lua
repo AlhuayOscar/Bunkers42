@@ -21,14 +21,21 @@ local CFG = {
     MaxMailboxCentralDistance = 20,
     MailboxCapacity = 100,
     CentralEnergyMax = 100,
+    CentralMaxRuntimeMinutes = 10080,
     CentralMinutesPerPercent = 4,
     BatteryMaxUses = 3,
     BatteryScrapRewardType = "Base.ElectronicsScrap",
     BatteryChargeByType = {
-        ["Base.CarBattery"] = 10,
-        ["Base.CarBattery1"] = 10,
-        ["Base.CarBattery2"] = 15,
-        ["Base.CarBattery3"] = 20,
+        ["Base.CarBattery"] = 15,
+        ["Base.CarBattery1"] = 29,
+        ["Base.CarBattery2"] = 29,
+        ["Base.CarBattery3"] = 100,
+    },
+    BatteryRuntimeMinutesByType = {
+        ["Base.CarBattery"] = 1440,
+        ["Base.CarBattery1"] = 2880,
+        ["Base.CarBattery2"] = 2880,
+        ["Base.CarBattery3"] = 10080,
     },
     MinElectricityToConnect = 3,
 }
@@ -90,10 +97,10 @@ local function getBatteryChargePercent(fullType)
     end
 
     -- Fallback for battery naming variants.
-    if shortType == "CarBattery" then return 10 end
-    if shortType == "CarBattery1" then return 10 end
-    if shortType == "CarBattery2" then return 15 end
-    if shortType == "CarBattery3" then return 20 end
+    if shortType == "CarBattery" then return 15 end
+    if shortType == "CarBattery1" then return 29 end
+    if shortType == "CarBattery2" then return 29 end
+    if shortType == "CarBattery3" then return 100 end
     return 0
 end
 
@@ -106,9 +113,9 @@ end
 
 local function getBatteryStateLabelByUses(uses)
     local n = clampBatteryUses(uses)
-    if n <= 1 then return "Buen estado" end
-    if n == 2 then return "Usada" end
-    return "Malgastada"
+    if n <= 1 then return "Good" end
+    if n == 2 then return "Used" end
+    return "Worn"
 end
 
 local function applyBatteryMetadata(item, uses)
@@ -282,10 +289,18 @@ local function getMinutesPerPercent()
     return n
 end
 
+local function getMaxRuntimeMinutes()
+    local configured = math.floor(tonumber(CFG.CentralMaxRuntimeMinutes) or 0)
+    if configured > 0 then
+        return configured
+    end
+    return CFG.CentralEnergyMax * getMinutesPerPercent()
+end
+
 local function clampRuntimeMinutes(value)
     local n = math.floor(tonumber(value) or 0)
     if n < 0 then n = 0 end
-    local maxRuntime = CFG.CentralEnergyMax * getMinutesPerPercent()
+    local maxRuntime = getMaxRuntimeMinutes()
     if n > maxRuntime then
         n = maxRuntime
     end
@@ -293,7 +308,37 @@ local function clampRuntimeMinutes(value)
 end
 
 local function getRuntimeMinutesFromEnergyPercent(energyPercent)
-    return clampRuntimeMinutes(clampEnergyPercent(energyPercent) * getMinutesPerPercent())
+    local energy = clampEnergyPercent(energyPercent)
+    local maxRuntime = getMaxRuntimeMinutes()
+    if maxRuntime <= 0 then return 0 end
+    return clampRuntimeMinutes(math.floor((energy / CFG.CentralEnergyMax) * maxRuntime))
+end
+
+local function getEnergyPercentFromRuntimeMinutes(runtimeMinutes)
+    local runtime = clampRuntimeMinutes(runtimeMinutes)
+    local maxRuntime = getMaxRuntimeMinutes()
+    if maxRuntime <= 0 then return 0 end
+    if runtime <= 0 then return 0 end
+    return clampEnergyPercent(math.ceil((runtime / maxRuntime) * CFG.CentralEnergyMax))
+end
+
+local function getBatteryRuntimeMinutes(fullType)
+    if not fullType then return 0 end
+    local runtime = CFG.BatteryRuntimeMinutesByType[fullType]
+    if runtime then
+        return clampRuntimeMinutes(runtime)
+    end
+
+    local shortType = getShortTypeFromFullType(fullType)
+    if shortType then
+        for key, value in pairs(CFG.BatteryRuntimeMinutesByType) do
+            if getShortTypeFromFullType(key) == shortType then
+                return clampRuntimeMinutes(value)
+            end
+        end
+    end
+
+    return getRuntimeMinutesFromEnergyPercent(getBatteryChargePercent(fullType))
 end
 
 local function clampRadiusBonus(value)
@@ -565,6 +610,16 @@ local function ensureInvisibleGenerator(square, wantOn)
             pcall(function() generator:setConnected(true) end)
         end
         changed = true
+    end
+
+    if shouldBeOn then
+        if generator.setFuel then
+            pcall(function() generator:setFuel(100) end)
+        end
+        gmd.fuel = 100
+        if generator.setCondition then
+            pcall(function() generator:setCondition(100) end)
+        end
     end
 
     if effectiveCurrent ~= shouldBeOn then
@@ -1096,6 +1151,43 @@ local function maintainPowerSafety()
     end
 end
 
+local _baGeneratorActivationMaintainTick = 0
+local function maintainOwnedGeneratorActivation()
+    _baGeneratorActivationMaintainTick = _baGeneratorActivationMaintainTick + 1
+    if _baGeneratorActivationMaintainTick < 90 then return end
+    _baGeneratorActivationMaintainTick = 0
+
+    local store = getStore()
+    if not store or not store.nodes then return end
+    local effective = getNetworkState(store)
+
+    for key, node in pairs(store.nodes) do
+        local square = getSquare(node.x, node.y, node.z)
+        if square then
+            local wantOn = effective[key] == true
+            if node and node.source ~= false and nodeCanSelfPower(node) then
+                wantOn = true
+            end
+
+            local generator = square:getGenerator()
+            if (not generator) or (generator.getModData and not generator:getModData().baInvisibleGeneratorOwned) then
+                generator = findOwnedGeneratorNearSquare(square)
+            end
+
+            local currentOn = getGeneratorActivatedState(generator)
+            local needsFuelRefresh = false
+            if wantOn and generator and generator.getFuel then
+                local ok, fuel = pcall(function() return tonumber(generator:getFuel()) or 0 end)
+                needsFuelRefresh = ok and fuel < 95
+            end
+
+            if currentOn ~= wantOn or needsFuelRefresh then
+                ensureInvisibleGenerator(square, wantOn)
+            end
+        end
+    end
+end
+
 local function findNearestActiveCentralNodeKeyFromSquare(square)
     if not square then return nil end
     local store = getStore()
@@ -1487,12 +1579,16 @@ local function insertCentralBatteryAt(x, y, z, player, fullType, args)
         return false
     end
 
-    local current = getNodeEnergyPercent(node)
-    local target = current + charge
-    if target > CFG.CentralEnergyMax then
-        if clientConsumed then
-            target = CFG.CentralEnergyMax
-        else
+    local currentEnergy = getNodeEnergyPercent(node)
+    local currentRuntime = clampRuntimeMinutes(node.runtimeMinutes)
+    local addedRuntime = getBatteryRuntimeMinutes(resolvedFullType)
+    if addedRuntime <= 0 then
+        addedRuntime = getRuntimeMinutesFromEnergyPercent(charge)
+    end
+
+    local targetRuntime = currentRuntime + addedRuntime
+    if targetRuntime > getMaxRuntimeMinutes() then
+        if not clientConsumed then
             -- rollback battery removal if charge would exceed max
             if player and resolvedFullType and resolvedFullType ~= "" then
                 local inv = player:getInventory()
@@ -1503,11 +1599,11 @@ local function insertCentralBatteryAt(x, y, z, player, fullType, args)
             print("[BunkersAnywhere] InsertCentralBattery rejected: would exceed 100% at " .. tostring(x) .. "," .. tostring(y) .. "," .. tostring(z))
             return false
         end
+        targetRuntime = getMaxRuntimeMinutes()
     end
 
-    node.energy = clampEnergyPercent(target)
-    local addedRuntime = getRuntimeMinutesFromEnergyPercent(charge)
-    node.runtimeMinutes = clampRuntimeMinutes((node.runtimeMinutes or 0) + addedRuntime)
+    node.runtimeMinutes = clampRuntimeMinutes(targetRuntime)
+    node.energy = getEnergyPercentFromRuntimeMinutes(node.runtimeMinutes)
     local autoReactivated = false
     if node.source ~= false and node.energy > 0 and node.runtimeMinutes > 0 and node.active ~= true then
         node.active = true
@@ -1517,7 +1613,7 @@ local function insertCentralBatteryAt(x, y, z, player, fullType, args)
         fullType = resolvedFullType,
         uses = batteryUses,
     })
-    print("[BunkersAnywhere] InsertCentralBattery applied: " .. tostring(resolvedFullType) .. " +" .. tostring(charge) .. "% (" .. tostring(current) .. "% -> " .. tostring(node.energy) .. "%) runtime=" .. tostring(node.runtimeMinutes) .. " autoReactivated=" .. tostring(autoReactivated))
+    print("[BunkersAnywhere] InsertCentralBattery applied: " .. tostring(resolvedFullType) .. " runtime+" .. tostring(addedRuntime) .. "m (" .. tostring(currentEnergy) .. "% -> " .. tostring(node.energy) .. "%) runtime=" .. tostring(node.runtimeMinutes) .. " autoReactivated=" .. tostring(autoReactivated))
     transmitStore()
     applyNetworkPower(store)
 
@@ -1685,7 +1781,7 @@ local function consumeCentralRuntimePerMinute(store)
     local powerStateChanged = false
     local effective, providers = getNetworkState(store)
     local sourceLoads = computeSourceRuntimeLoadPerMinute(store, effective, providers)
-    local maxRuntimeAtFull = getRuntimeMinutesFromEnergyPercent(CFG.CentralEnergyMax)
+    local maxRuntimeAtFull = getMaxRuntimeMinutes()
 
     for key, load in pairs(sourceLoads) do
         local node = store.nodes[key]
@@ -1724,7 +1820,7 @@ local function consumeCentralRuntimePerMinute(store)
                     end
 
                     if maxRuntimeAtFull > 0 then
-                        local newEnergy = clampEnergyPercent(math.ceil((runtime / maxRuntimeAtFull) * CFG.CentralEnergyMax))
+                        local newEnergy = getEnergyPercentFromRuntimeMinutes(runtime)
                         if runtime <= 0 then newEnergy = 0 end
                         if newEnergy ~= energy then
                             node.energy = newEnergy
@@ -2081,3 +2177,4 @@ Events.EveryOneMinute.Add(cleanupAndMaintain)
 -- Disabled to avoid rapid ON/OFF oscillation in MP.
 -- Events.OnTick.Add(maintainPowerSafety)
 Events.OnTick.Add(maintainLoadedBasementPowerAroundPlayers)
+Events.OnTick.Add(maintainOwnedGeneratorActivation)

@@ -1,0 +1,30 @@
+WIP ELECTRIC SYSTEM UPDATE
+Build 42.4.x
+
+EN
+- Added the new WIP electric central system for bunker power management.
+- Hidden generator activation is now kept in sync more reliably after turning a central off and on again.
+- Fixed a case where the central could shut down a few seconds after being turned back on while still draining battery time.
+- Reworked battery runtime handling to use explicit durations instead of the old short percentage-based behavior.
+- Battery runtimes are now:
+  CarBattery = 24 hours
+  CarBattery1 = 48 hours
+  CarBattery2 = 48 hours
+  CarBattery3 = 1 week
+- Central battery insert/remove flow and runtime display were updated to match the new WIP electric system.
+- Central menus, labels, and warnings now use English by default and Spanish only when the game language is Spanish.
+- Added new translation keys for central status, battery actions, warnings, and overlay text.
+
+ES
+- Agregado el nuevo sistema electrico WIP de centrales para gestionar energia en los bunkers.
+- La activacion del generador oculto ahora se mantiene sincronizada de forma mas fiable despues de apagar y volver a encender una central.
+- Corregido un caso en el que la central se apagaba unos segundos despues de volver a encenderse mientras seguia consumiendo bateria.
+- Ajustado el manejo del tiempo de bateria para usar duraciones explicitas en lugar del comportamiento anterior basado en porcentajes cortos.
+- Las duraciones de baterias ahora son:
+  CarBattery = 24 horas
+  CarBattery1 = 48 horas
+  CarBattery2 = 48 horas
+  CarBattery3 = 1 semana
+- El flujo de insertar/quitar baterias y la visualizacion del tiempo restante ahora coinciden con el nuevo sistema electrico WIP.
+- Los menus, etiquetas y avisos de la central ahora usan ingles por defecto y espanol solo cuando el juego esta en espanol.
+- Agregadas nuevas claves de traduccion para estado de central, acciones de bateria, avisos y texto de overlay.
