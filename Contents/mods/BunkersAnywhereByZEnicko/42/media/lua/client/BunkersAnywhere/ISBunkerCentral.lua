@@ -292,9 +292,9 @@ end
 
 function BunkersAnywhere.getCentralBatteryUseLabel(uses)
     local n = math.floor(tonumber(uses) or 1)
-    if n <= 1 then return "Buen estado" end
-    if n == 2 then return "Usada" end
-    return "Malgastada"
+    if n <= 1 then return "Good" end
+    if n == 2 then return "Used" end
+    return "Worn"
 end
 
 function BunkersAnywhere.getInstalledCentralBatteriesForMenu(currentNode, modData)
@@ -687,7 +687,7 @@ function BunkersAnywhere.connectInvisibleGeneratorCentral(centralObj, playerObj)
     local elecLevel = BunkersAnywhere.getPlayerElectricityLevel(playerObj)
     local needLevel = BunkersAnywhere.CentralSkill.MinElectricityToConnect
     if elecLevel < needLevel then
-        playerObj:setHaloNote("Necesitas Electricidad " .. tostring(needLevel) .. " (tienes " .. tostring(elecLevel) .. ")", 255, 120, 0, 380)
+        playerObj:setHaloNote("You need Electricity " .. tostring(needLevel) .. " (you have " .. tostring(elecLevel) .. ")", 255, 120, 0, 380)
         return
     end
 
@@ -750,7 +750,7 @@ function BunkersAnywhere.connectInvisibleGeneratorToOtherCentral(centralObj, pla
     local elecLevel = BunkersAnywhere.getPlayerElectricityLevel(playerObj)
     local needLevel = BunkersAnywhere.CentralSkill.MinElectricityToConnect
     if elecLevel < needLevel then
-        playerObj:setHaloNote("Necesitas Electricidad " .. tostring(needLevel) .. " (tienes " .. tostring(elecLevel) .. ")", 255, 120, 0, 380)
+        playerObj:setHaloNote("You need Electricity " .. tostring(needLevel) .. " (you have " .. tostring(elecLevel) .. ")", 255, 120, 0, 380)
         return
     end
     local keyA = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
@@ -790,7 +790,7 @@ end
 function BunkersAnywhere.upgradeCentralRadius(centralObj, playerObj)
     if BunkersAnywhere.InvisibleCentralGenerator.RadiusUpgradeEnabled ~= true then
         if playerObj and playerObj.setHaloNote then
-            playerObj:setHaloNote("Ampliar central esta deshabilitado temporalmente", 255, 180, 80, 450)
+            playerObj:setHaloNote("Central upgrade is temporarily disabled", 255, 180, 80, 450)
         end
         return
     end
@@ -804,7 +804,7 @@ function BunkersAnywhere.upgradeCentralRadius(centralObj, playerObj)
     local node = store.nodes and store.nodes[key] or nil
     local isSource = (node and node.source ~= false) or (md and md.baInvisibleGeneratorIsSource == true)
     if not isSource then
-        playerObj:setHaloNote("Solo las centrales principales pueden ampliarse", 255, 120, 0, 340)
+        playerObj:setHaloNote("Only primary centrals can be upgraded", 255, 120, 0, 340)
         return
     end
 
@@ -852,7 +852,7 @@ function BunkersAnywhere.upgradeCentralRadius(centralObj, playerObj)
         })
     end
 
-    playerObj:setHaloNote("Central ampliada: +" .. tostring(newBonus) .. " tiles de radio", 0, 220, 255, 420)
+    playerObj:setHaloNote("Central upgraded: +" .. tostring(newBonus) .. " tiles of range", 0, 220, 255, 420)
 end
 
 function BunkersAnywhere.insertCentralBattery(centralObj, playerObj, fullType)
@@ -866,7 +866,7 @@ function BunkersAnywhere.insertCentralBattery(centralObj, playerObj, fullType)
     local energy = BunkersAnywhere.getCentralEnergyPercent(node, md)
     local charge = BunkersAnywhere.getCentralBatteryCharge(fullType)
     if charge <= 0 then
-        playerObj:setHaloNote("Bateria no valida para esta central", 255, 120, 0, 300)
+        playerObj:setHaloNote("Invalid battery for this central", 255, 120, 0, 300)
         return
     end
     if energy + charge > BunkersAnywhere.CentralBattery.MaxEnergy then
@@ -875,7 +875,7 @@ function BunkersAnywhere.insertCentralBattery(centralObj, playerObj, fullType)
     end
     local consumedFullType, consumedCharge, consumedUses = BunkersAnywhere.consumeCentralBatteryFromPlayerInventory(playerObj, fullType, BunkersAnywhere.CentralBattery.MaxEnergy - energy)
     if not consumedFullType or consumedCharge <= 0 then
-        playerObj:setHaloNote("No tienes una bateria compatible para insertar", 255, 120, 0, 320)
+        playerObj:setHaloNote("You do not have a compatible battery to insert", 255, 120, 0, 320)
         return
     end
 
@@ -909,7 +909,7 @@ function BunkersAnywhere.insertAnyCentralBattery(centralObj, playerObj)
 
     local consumedFullType, consumedCharge, consumedUses = BunkersAnywhere.consumeCentralBatteryFromPlayerInventory(playerObj, "AUTO", headroom)
     if not consumedFullType or consumedCharge <= 0 then
-        playerObj:setHaloNote("No tienes una bateria compatible para insertar sin superar 100%", 255, 120, 0, 350)
+        playerObj:setHaloNote("You do not have a compatible battery that fits without exceeding 100%", 255, 120, 0, 350)
         return
     end
 
@@ -1043,7 +1043,7 @@ function BunkersAnywhere.setInvisibleGeneratorCentralState(centralObj, playerObj
     local isSource = (node and node.source ~= false) or (md and md.baInvisibleGeneratorIsSource == true)
     local energy = BunkersAnywhere.getCentralEnergyPercent(node, md)
     if wantOn and isSource and energy <= 0 then
-        playerObj:setHaloNote("La central no tiene energia (0%). Inserta una bateria.", 255, 120, 0, 350)
+        playerObj:setHaloNote("This central has no energy (0%). Insert a battery.", 255, 120, 0, 350)
         return
     end
     local current = (node and node.active == true) or (md and md.baInvisibleGeneratorLocalOn == true) or false
@@ -1107,7 +1107,7 @@ end
 function BunkersAnywhere.onUpgradeCentralRadius(centralObj, playerObj)
     if BunkersAnywhere.InvisibleCentralGenerator.RadiusUpgradeEnabled ~= true then
         if playerObj and playerObj.setHaloNote then
-            playerObj:setHaloNote("Ampliar central esta deshabilitado temporalmente", 255, 180, 80, 450)
+            playerObj:setHaloNote("Central upgrade is temporarily disabled", 255, 180, 80, 450)
         end
         return
     end
@@ -1376,24 +1376,24 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
                 connectOpt.toolTip.description = "Requiere Electricidad " .. tostring(needElec) .. " (actual " .. tostring(elecLevel) .. ")"
             end
         else
-            local info = context:addOption("Energia central: " .. tostring(energyPercent) .. "%")
+            local info = context:addOption("Central energy: " .. tostring(energyPercent) .. "%")
             info.notAvailable = true
             local remainingMinutes = BunkersAnywhere.getCentralRemainingMinutesDisplay(currentNode, md, currentKey)
-            local timeInfo = context:addOption("Tiempo restante: " .. BunkersAnywhere.formatCentralRemainingTime(remainingMinutes))
+            local timeInfo = context:addOption("Time remaining: " .. BunkersAnywhere.formatCentralRemainingTime(remainingMinutes))
             timeInfo.notAvailable = true
             local radiusBonus = BunkersAnywhere.getCentralRadiusBonus(currentNode, md)
             local radiusValue = BunkersAnywhere.InvisibleCentralGenerator.BaseRadius + radiusBonus
-            local radiusInfo = context:addOption("Radio central: " .. tostring(radiusValue) .. " tiles")
+            local radiusInfo = context:addOption("Central radius: " .. tostring(radiusValue) .. " tiles")
             radiusInfo.notAvailable = true
 
-            local upgradeDisabled = context:addOption("Ampliar central (temporalmente deshabilitado)")
+            local upgradeDisabled = context:addOption("Upgrade central (temporarily disabled)")
             upgradeDisabled.notAvailable = true
 
             if energyPercent < BunkersAnywhere.CentralBattery.MaxEnergy then
-                context:addOption("Cargar bateria automaticamente", centralObj, BunkersAnywhere.onInsertAnyCentralBattery, playerObj)
+                context:addOption("Load battery automatically", centralObj, BunkersAnywhere.onInsertAnyCentralBattery, playerObj)
             end
 
-            local addSub = context:addOption("Cargar central con bateria")
+            local addSub = context:addOption("Load central with battery")
             local addSubCtx = ISContextMenu:getNew(context)
             context:addSubMenu(addSub, addSubCtx)
             local hasInsertOption = false
@@ -1403,7 +1403,7 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
                 local shortType = BunkersAnywhere.getShortTypeFromFullType(fullType) or fullType
                 local have = BunkersAnywhere.countBatteryTypeAvailable(playerObj, fullType)
                 local after = energyPercent + charge
-                local label = "Insertar " .. shortType .. " (+" .. tostring(charge) .. "%) [" .. tostring(have) .. "]"
+                local label = "Insert " .. shortType .. " (+" .. tostring(charge) .. "%) [" .. tostring(have) .. "]"
                 local opt = addSubCtx:addOption(label, centralObj, BunkersAnywhere.onInsertCentralBattery, playerObj, fullType)
 
                 if charge <= 0 or after > BunkersAnywhere.CentralBattery.MaxEnergy then
@@ -1412,9 +1412,9 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
                     opt.toolTip:initialise()
                     opt.toolTip:setVisible(false)
                     if after > BunkersAnywhere.CentralBattery.MaxEnergy then
-                        opt.toolTip.description = "Supera 100% (" .. tostring(energyPercent) .. "% + " .. tostring(charge) .. "%)"
+                        opt.toolTip.description = "Exceeds 100% (" .. tostring(energyPercent) .. "% + " .. tostring(charge) .. "%)"
                     else
-                        opt.toolTip.description = "Bateria no valida"
+                        opt.toolTip.description = "Invalid battery"
                     end
                 else
                     hasInsertOption = true
@@ -1429,7 +1429,7 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
 
         local installed = BunkersAnywhere.getInstalledCentralBatteriesForMenu(currentNode, md)
         if installed and #installed > 0 then
-            local removeSub = context:addOption("Retirar bateria de central")
+            local removeSub = context:addOption("Remove battery from central")
             local removeSubCtx = ISContextMenu:getNew(context)
             context:addSubMenu(removeSub, removeSubCtx)
 
@@ -1439,7 +1439,7 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
                 removeSub.toolTip = ISToolTip:new()
                 removeSub.toolTip:initialise()
                 removeSub.toolTip:setVisible(false)
-                removeSub.toolTip.description = "Apaga la central para retirar baterias"
+                removeSub.toolTip.description = "Turn off the central to remove batteries"
             else
                 for idx, entry in ipairs(installed) do
                     local uses = math.floor(tonumber(entry and entry.uses) or 1)
