@@ -174,11 +174,12 @@ local function forceNoToxic(square)
     end
 end
 
-local function updateCentralModData(square, on, localOn, providerText, providerCount)
+local function updateCentralModData(square, on, localOn, providerText, providerCount, isSource)
     local hasCentral, centralObj = hasCentralOnSquare(square)
     if hasCentral and centralObj and centralObj.getModData then
         local md = centralObj:getModData()
-        md.baInvisibleGeneratorConnected = true
+        md.baInvisibleGeneratorConnected = isSource == true
+        md.baInvisibleGeneratorIsSource = isSource == true
         md.baInvisibleGeneratorOn = on == true
         md.baInvisibleGeneratorLocalOn = localOn == true
         md.baInvisibleGeneratorProviderText = providerText or ""
@@ -199,6 +200,7 @@ local function getNetworkState(store)
             local stack = { rootKey }
             local component = {}
             local activeProviders = {}
+            local hasSourceProvider = false
 
             while #stack > 0 do
                 local key = table.remove(stack)
@@ -206,12 +208,15 @@ local function getNetworkState(store)
                 if not visited[key] and node and node.active then
                     visited[key] = true
                     table.insert(component, key)
-                    table.insert(activeProviders, {
-                        x = node.x,
-                        y = node.y,
-                        z = node.z,
-                        key = key,
-                    })
+                    if node.source ~= false then
+                        hasSourceProvider = true
+                        table.insert(activeProviders, {
+                            x = node.x,
+                            y = node.y,
+                            z = node.z,
+                            key = key,
+                        })
+                    end
 
                     local links = node.links or {}
                     for linkedKey, enabled in pairs(links) do
@@ -223,9 +228,16 @@ local function getNetworkState(store)
                 end
             end
 
-            for _, key in ipairs(component) do
-                effective[key] = true
-                providers[key] = activeProviders
+            if hasSourceProvider then
+                for _, key in ipairs(component) do
+                    effective[key] = true
+                    providers[key] = activeProviders
+                end
+            else
+                for _, key in ipairs(component) do
+                    effective[key] = false
+                    providers[key] = {}
+                end
             end
         end
     end
@@ -239,6 +251,7 @@ local function applyNetworkPower(store)
         local square = getSquare(node.x, node.y, node.z)
         local localOn = node.active == true
         local wantOn = effective[key] == true
+        local isSource = node.source ~= false
         local providerText = ""
         local providerCount = 0
         local pList = providers[key]
@@ -254,7 +267,7 @@ local function applyNetworkPower(store)
             providerText = table.concat(parts, " | ")
         end
         if square then
-            updateCentralModData(square, wantOn, localOn, providerText, providerCount)
+            updateCentralModData(square, wantOn, localOn, providerText, providerCount, isSource)
             ensureInvisibleGenerator(square, wantOn)
             forceNoToxic(square)
             clampGeneratorPowerToBasement(node)
@@ -317,7 +330,7 @@ local function clearItemsMap(map)
     end
 end
 
-local function connectNodeAt(x, y, z)
+local function ensureNodeAt(x, y, z, asSource)
     local square = getSquare(x, y, z)
     if not square then return false end
     if z ~= CFG.ZLevel then return false end
@@ -326,15 +339,42 @@ local function connectNodeAt(x, y, z)
 
     local store = getStore()
     local key = getNodeKey(x, y, z)
+    local existed = store.nodes[key] ~= nil
     local previous = store.nodes[key] or {}
-    store.nodes[key] = {
+    local node = {
         x = x,
         y = y,
         z = z,
-        active = true,
+        active = (previous.active == nil) and true or (previous.active == true),
         links = previous.links or {},
+        source = previous.source,
     }
+    if asSource == true then
+        node.source = true
+    elseif not existed and node.source == nil then
+        node.source = false
+    end
+    store.nodes[key] = node
+    return true
+end
 
+local function connectNodeAt(x, y, z)
+    if not ensureNodeAt(x, y, z, true) then return false end
+
+    local store = getStore()
+    local key = getNodeKey(x, y, z)
+    if store.nodes[key] then
+        store.nodes[key].active = true
+    end
+
+    transmitStore()
+    applyNetworkPower(store)
+    return true
+end
+
+local function registerNodeAt(x, y, z)
+    if not ensureNodeAt(x, y, z, false) then return false end
+    local store = getStore()
     transmitStore()
     applyNetworkPower(store)
     return true
@@ -347,15 +387,15 @@ local function linkNodes(ax, ay, az, bx, by, bz)
     local a = store.nodes[keyA]
     local b = store.nodes[keyB]
 
-    -- Bypass: if a central tile exists but its node was not created yet,
-    -- create/connect it on-demand before linking.
+    -- Bypass: if central tiles exist but nodes were not registered yet,
+    -- register as non-source nodes before linking.
     if not a then
-        connectNodeAt(ax, ay, az)
+        ensureNodeAt(ax, ay, az, false)
         store = getStore()
         a = store.nodes[keyA]
     end
     if not b then
-        connectNodeAt(bx, by, bz)
+        ensureNodeAt(bx, by, bz, false)
         store = getStore()
         b = store.nodes[keyB]
     end
@@ -631,6 +671,8 @@ local function onClientCommand(module, command, player, args)
 
     if command == "ConnectInvisibleGeneratorCentral" then
         connectNodeAt(tonumber(args.x), tonumber(args.y), tonumber(args.z))
+    elseif command == "RegisterInvisibleGeneratorCentral" then
+        registerNodeAt(tonumber(args.x), tonumber(args.y), tonumber(args.z))
     elseif command == "ToggleInvisibleGeneratorCentral" then
         setNodeStateAt(tonumber(args.x), tonumber(args.y), tonumber(args.z), args.on == true)
     elseif command == "LinkInvisibleGeneratorCentrals" then
