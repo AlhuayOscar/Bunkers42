@@ -14,6 +14,26 @@ BunkersAnywhere.ShippingMailbox = {
     Enabled = false,
 }
 
+BunkersAnywhere.CentralBattery = {
+    MaxEnergy = 100,
+    Types = {
+        "Base.CarBattery",
+        "Base.CarBattery1",
+        "Base.CarBattery2",
+        "Base.CarBattery3",
+    },
+    ChargeByType = {
+        ["Base.CarBattery"] = 40,
+        ["Base.CarBattery1"] = 40,
+        ["Base.CarBattery2"] = 60,
+        ["Base.CarBattery3"] = 80,
+    },
+}
+
+BunkersAnywhere.CentralSkill = {
+    MinElectricityToConnect = 3,
+}
+
 function BunkersAnywhere.isInvisibleCentralSpriteName(spriteName)
     if not spriteName then return false end
     if spriteName == BunkersAnywhere.InvisibleCentralGenerator.SpriteName then return true end
@@ -70,6 +90,226 @@ end
 
 function BunkersAnywhere.getInvisibleGeneratorNodeKey(x, y, z)
     return tostring(math.floor(x)) .. ":" .. tostring(math.floor(y)) .. ":" .. tostring(math.floor(z))
+end
+
+function BunkersAnywhere.getShortTypeFromFullType(fullType)
+    if not fullType then return nil end
+    local dot = string.find(fullType, "%.")
+    if not dot then return fullType end
+    return string.sub(fullType, dot + 1)
+end
+
+function BunkersAnywhere.getCentralBatteryCharge(fullType)
+    if not fullType then return 0 end
+    local charge = BunkersAnywhere.CentralBattery.ChargeByType[fullType]
+    if charge then
+        return math.floor(tonumber(charge) or 0)
+    end
+    local shortType = BunkersAnywhere.getShortTypeFromFullType(fullType)
+    if not shortType then return 0 end
+    for key, value in pairs(BunkersAnywhere.CentralBattery.ChargeByType) do
+        if BunkersAnywhere.getShortTypeFromFullType(key) == shortType then
+            return math.floor(tonumber(value) or 0)
+        end
+    end
+
+    -- Fallback for modded batteries with same naming family.
+    if shortType == "CarBattery" then return 40 end
+    if shortType == "CarBattery1" then return 40 end
+    if shortType == "CarBattery2" then return 60 end
+    if shortType == "CarBattery3" then return 80 end
+    return 0
+end
+
+function BunkersAnywhere.getCentralEnergyPercent(node, modData)
+    local energy = 0
+    if node and node.energy ~= nil then
+        energy = tonumber(node.energy) or energy
+    end
+    if modData and modData.baCentralEnergyPercent ~= nil then
+        energy = tonumber(modData.baCentralEnergyPercent) or energy
+    end
+    energy = math.floor(energy or 0)
+    if energy < 0 then energy = 0 end
+    if energy > BunkersAnywhere.CentralBattery.MaxEnergy then
+        energy = BunkersAnywhere.CentralBattery.MaxEnergy
+    end
+    return energy
+end
+
+function BunkersAnywhere.countBatteryTypeAvailable(playerObj, fullType)
+    local shortType = BunkersAnywhere.getShortTypeFromFullType(fullType)
+    if not shortType then return 0 end
+    local inv = playerObj:getInventory()
+    if not inv then return 0 end
+    local total = 0
+
+    local function scan(container)
+        if not container then return end
+        local items = container:getItems()
+        if not items or not items.size then return end
+        for i = 0, items:size() - 1 do
+            local item = items:get(i)
+            if item then
+                local t = item:getType()
+                local ft = item:getFullType()
+                if t == shortType or ft == fullType then
+                    total = total + 1
+                end
+                local child = item.getInventory and item:getInventory() or nil
+                if child then
+                    scan(child)
+                end
+            end
+        end
+    end
+
+    scan(inv)
+    return total
+end
+
+function BunkersAnywhere.getCentralBatteryDefsOrdered()
+    return {
+        { shortType = "CarBattery3", fullType = "Base.CarBattery3" },
+        { shortType = "CarBattery2", fullType = "Base.CarBattery2" },
+        { shortType = "CarBattery1", fullType = "Base.CarBattery1" },
+        { shortType = "CarBattery",  fullType = "Base.CarBattery"  },
+    }
+end
+
+function BunkersAnywhere.getCentralBatteryDefByRequest(requestedFullType)
+    local requestedShort = BunkersAnywhere.getShortTypeFromFullType(requestedFullType)
+    if not requestedShort then return nil end
+    for _, def in ipairs(BunkersAnywhere.getCentralBatteryDefsOrdered()) do
+        if requestedFullType == def.fullType or requestedShort == def.shortType then
+            return def
+        end
+    end
+    return nil
+end
+
+function BunkersAnywhere.consumeCentralBatteryFromPlayerInventory(playerObj, requestedFullType, maxCharge)
+    if not playerObj then return nil, 0 end
+    local inv = playerObj:getInventory()
+    if not inv then return nil, 0 end
+
+    local requestedIsAuto = (requestedFullType == nil or requestedFullType == "" or requestedFullType == "AUTO")
+    local selected = nil
+    local allowedMax = math.floor(tonumber(maxCharge) or BunkersAnywhere.CentralBattery.MaxEnergy)
+    if allowedMax < 0 then allowedMax = 0 end
+
+    if requestedIsAuto then
+        for _, def in ipairs(BunkersAnywhere.getCentralBatteryDefsOrdered()) do
+            local defCharge = BunkersAnywhere.getCentralBatteryCharge(def.fullType)
+            if defCharge > 0 and defCharge <= allowedMax and BunkersAnywhere.countBatteryTypeAvailable(playerObj, def.fullType) > 0 then
+                selected = def
+                break
+            end
+        end
+    else
+        selected = BunkersAnywhere.getCentralBatteryDefByRequest(requestedFullType)
+        if selected and BunkersAnywhere.countBatteryTypeAvailable(playerObj, selected.fullType) <= 0 then
+            selected = nil
+        end
+    end
+
+    if not selected then return nil, 0 end
+    local charge = BunkersAnywhere.getCentralBatteryCharge(selected.fullType)
+    if charge <= 0 or charge > allowedMax then return nil, 0 end
+
+    local before = BunkersAnywhere.countBatteryTypeAvailable(playerObj, selected.fullType)
+    if before <= 0 then return nil, 0 end
+
+    inv:RemoveOneOf(selected.fullType)
+    local after = BunkersAnywhere.countBatteryTypeAvailable(playerObj, selected.fullType)
+    if after < before then
+        return selected.fullType, charge
+    end
+
+    inv:RemoveOneOf(selected.shortType)
+    after = BunkersAnywhere.countBatteryTypeAvailable(playerObj, selected.fullType)
+    if after < before then
+        return selected.fullType, charge
+    end
+
+    local item = inv:getItemFromTypeRecurse(selected.fullType) or inv:getItemFromTypeRecurse(selected.shortType)
+    if item then
+        inv:Remove(item)
+        return (item:getFullType() or selected.fullType), charge
+    end
+
+    return nil, 0
+end
+
+function BunkersAnywhere.debugLogBatteryInventoryClient(playerObj, reason)
+    if not playerObj then return end
+    if getTimestampMs then
+        local now = getTimestampMs()
+        local last = BunkersAnywhere._lastClientInvDebugMs or 0
+        if now - last < 1200 then
+            return
+        end
+        BunkersAnywhere._lastClientInvDebugMs = now
+    end
+    local inv = playerObj:getInventory()
+    if not inv then return end
+
+    local summary = {}
+    local total = 0
+
+    local function scan(container)
+        if not container then return end
+        local items = container:getItems()
+        if not items or not items.size then return end
+        for i = 0, items:size() - 1 do
+            local item = items:get(i)
+            if item then
+                local t = item:getType() or "?"
+                local ft = item:getFullType() or "?"
+                local lt = string.lower(t)
+                local lft = string.lower(ft)
+                if string.find(lt, "battery", 1, true) or string.find(lft, "battery", 1, true) then
+                    local key = ft .. "|" .. t
+                    summary[key] = (summary[key] or 0) + 1
+                    total = total + 1
+                end
+                local child = item.getInventory and item:getInventory() or nil
+                if child then
+                    scan(child)
+                end
+            end
+        end
+    end
+
+    scan(inv)
+    local username = (playerObj.getUsername and playerObj:getUsername()) or "unknown"
+    print("[BunkersAnywhere][ClientInvDebug] reason=" .. tostring(reason or "context") .. " user=" .. tostring(username) .. " batteryItems=" .. tostring(total))
+
+    local keys = {}
+    for k, _ in pairs(summary) do
+        table.insert(keys, k)
+    end
+    table.sort(keys)
+    if #keys == 0 then
+        print("[BunkersAnywhere][ClientInvDebug] no battery-like items found in player inventory")
+    else
+        for _, k in ipairs(keys) do
+            local sep = string.find(k, "|", 1, true)
+            local ft = sep and string.sub(k, 1, sep - 1) or k
+            local t = sep and string.sub(k, sep + 1) or "?"
+            print("[BunkersAnywhere][ClientInvDebug] item fullType=" .. tostring(ft) .. " type=" .. tostring(t) .. " count=" .. tostring(summary[k]))
+        end
+    end
+end
+
+function BunkersAnywhere.getPlayerElectricityLevel(playerObj)
+    if not playerObj or not playerObj.getPerkLevel then return 0 end
+    if not Perks or not Perks.Electricity then return 0 end
+    local ok, level = pcall(function()
+        return playerObj:getPerkLevel(Perks.Electricity)
+    end)
+    if not ok then return 0 end
+    return math.floor(tonumber(level) or 0)
 end
 
 function BunkersAnywhere.isInvisibleGeneratorConnected(obj)
@@ -141,6 +381,27 @@ function BunkersAnywhere.hideGeneratorNearCentralNode(node)
     end
 
     return hiddenAny
+end
+
+local function hasOwnedInvisibleGeneratorNearPlayer(playerObj, radius)
+    local sq = playerObj and playerObj:getSquare()
+    if not sq then return false end
+    local cell = getCell()
+    if not cell then return false end
+    local r = radius or 1
+    local px, py, pz = sq:getX(), sq:getY(), sq:getZ()
+    for x = px - r, px + r do
+        for y = py - r, py + r do
+            local s = cell:getGridSquare(x, y, pz)
+            if s then
+                local g = s:getGenerator()
+                if g and BunkersAnywhere.isOwnedInvisibleGenerator(g) then
+                    return true
+                end
+            end
+        end
+    end
+    return false
 end
 
 function BunkersAnywhere.refreshOwnedInvisibleGenerators()
@@ -259,19 +520,28 @@ function BunkersAnywhere.connectInvisibleGeneratorCentral(centralObj, playerObj)
         playerObj:setHaloNote(getText("IGUI_Bunker_CentralGeneratorAlreadyConnected"), 240, 240, 0, 300)
         return
     end
+    local elecLevel = BunkersAnywhere.getPlayerElectricityLevel(playerObj)
+    local needLevel = BunkersAnywhere.CentralSkill.MinElectricityToConnect
+    if elecLevel < needLevel then
+        playerObj:setHaloNote("Necesitas Electricidad " .. tostring(needLevel) .. " (tienes " .. tostring(elecLevel) .. ")", 255, 120, 0, 380)
+        return
+    end
 
     local md = centralObj:getModData()
     md.baInvisibleGeneratorConnected = true
     md.baInvisibleGeneratorIsSource = true
-    md.baInvisibleGeneratorOn = true
+    md.baInvisibleGeneratorOn = false
+    md.baInvisibleGeneratorLocalOn = false
+    md.baCentralEnergyPercent = 0
     if centralObj.transmitModData then
         centralObj:transmitModData()
     end
 
     local store = BunkersAnywhere.getInvisibleGeneratorStore()
     local key = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
-    store.nodes[key] = store.nodes[key] or { x = sq:getX(), y = sq:getY(), z = sq:getZ(), active = true, source = true, links = {} }
-    store.nodes[key].active = true
+    store.nodes[key] = store.nodes[key] or { x = sq:getX(), y = sq:getY(), z = sq:getZ(), active = false, source = true, links = {}, energy = 0 }
+    store.nodes[key].energy = BunkersAnywhere.getCentralEnergyPercent(store.nodes[key], nil)
+    store.nodes[key].active = store.nodes[key].energy > 0
     store.nodes[key].source = true
     if ModData.transmit then
         ModData.transmit(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
@@ -295,7 +565,7 @@ function BunkersAnywhere.registerInvisibleGeneratorCentralCandidate(centralObj)
     local store = BunkersAnywhere.getInvisibleGeneratorStore()
     local key = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
     if not (store.nodes and store.nodes[key]) then
-        store.nodes[key] = { x = sq:getX(), y = sq:getY(), z = sq:getZ(), active = true, source = false, links = {} }
+        store.nodes[key] = { x = sq:getX(), y = sq:getY(), z = sq:getZ(), active = true, source = false, links = {}, energy = 0 }
         if ModData.transmit then
             ModData.transmit(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
         end
@@ -315,6 +585,12 @@ function BunkersAnywhere.connectInvisibleGeneratorToOtherCentral(centralObj, pla
     if targetZ ~= BunkersAnywhere.InvisibleCentralGenerator.ZLevel then return end
 
     local store = BunkersAnywhere.getInvisibleGeneratorStore()
+    local elecLevel = BunkersAnywhere.getPlayerElectricityLevel(playerObj)
+    local needLevel = BunkersAnywhere.CentralSkill.MinElectricityToConnect
+    if elecLevel < needLevel then
+        playerObj:setHaloNote("Necesitas Electricidad " .. tostring(needLevel) .. " (tienes " .. tostring(elecLevel) .. ")", 255, 120, 0, 380)
+        return
+    end
     local keyA = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
     local keyB = BunkersAnywhere.getInvisibleGeneratorNodeKey(targetX, targetY, targetZ)
     local nodeA = store.nodes and store.nodes[keyA] or nil
@@ -347,6 +623,75 @@ function BunkersAnywhere.connectInvisibleGeneratorToOtherCentral(centralObj, pla
     end
 
     playerObj:setHaloNote(getText("IGUI_Bunker_CentralLinkedTo", tostring(targetX), tostring(targetY), tostring(targetZ)), 0, 220, 255, 400)
+end
+
+function BunkersAnywhere.insertCentralBattery(centralObj, playerObj, fullType)
+    local sq = centralObj and centralObj:getSquare()
+    if not sq then return end
+    if not sendClientCommand then return end
+    local md = centralObj:getModData()
+    local store = BunkersAnywhere.getInvisibleGeneratorStore()
+    local key = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
+    local node = store.nodes and store.nodes[key] or nil
+    local energy = BunkersAnywhere.getCentralEnergyPercent(node, md)
+    local charge = BunkersAnywhere.getCentralBatteryCharge(fullType)
+    if charge <= 0 then
+        playerObj:setHaloNote("Bateria no valida para esta central", 255, 120, 0, 300)
+        return
+    end
+    if energy + charge > BunkersAnywhere.CentralBattery.MaxEnergy then
+        playerObj:setHaloNote("No puedes superar 100% (" .. tostring(energy) .. "% + " .. tostring(charge) .. "%)", 255, 120, 0, 380)
+        return
+    end
+    local consumedFullType, consumedCharge = BunkersAnywhere.consumeCentralBatteryFromPlayerInventory(playerObj, fullType, BunkersAnywhere.CentralBattery.MaxEnergy - energy)
+    if not consumedFullType or consumedCharge <= 0 then
+        playerObj:setHaloNote("No tienes una bateria compatible para insertar", 255, 120, 0, 320)
+        return
+    end
+
+    sendClientCommand("BunkersAnywhere", "InsertCentralBattery", {
+        x = sq:getX(),
+        y = sq:getY(),
+        z = sq:getZ(),
+        fullType = consumedFullType,
+        charge = consumedCharge,
+        clientConsumed = true,
+        onlineID = playerObj.getOnlineID and playerObj:getOnlineID() or -1,
+        username = playerObj.getUsername and playerObj:getUsername() or "",
+    })
+end
+
+function BunkersAnywhere.insertAnyCentralBattery(centralObj, playerObj)
+    local sq = centralObj and centralObj:getSquare()
+    if not sq or not sendClientCommand then return end
+
+    local md = centralObj:getModData()
+    local store = BunkersAnywhere.getInvisibleGeneratorStore()
+    local key = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
+    local node = store.nodes and store.nodes[key] or nil
+    local energy = BunkersAnywhere.getCentralEnergyPercent(node, md)
+    local headroom = BunkersAnywhere.CentralBattery.MaxEnergy - energy
+    if headroom <= 0 then
+        playerObj:setHaloNote("La central ya esta al 100%", 255, 180, 120, 280)
+        return
+    end
+
+    local consumedFullType, consumedCharge = BunkersAnywhere.consumeCentralBatteryFromPlayerInventory(playerObj, "AUTO", headroom)
+    if not consumedFullType or consumedCharge <= 0 then
+        playerObj:setHaloNote("No tienes una bateria compatible para insertar sin superar 100%", 255, 120, 0, 350)
+        return
+    end
+
+    sendClientCommand("BunkersAnywhere", "InsertCentralBattery", {
+        x = sq:getX(),
+        y = sq:getY(),
+        z = sq:getZ(),
+        fullType = consumedFullType,
+        charge = consumedCharge,
+        clientConsumed = true,
+        onlineID = playerObj.getOnlineID and playerObj:getOnlineID() or -1,
+        username = playerObj.getUsername and playerObj:getUsername() or "",
+    })
 end
 
 function BunkersAnywhere.isShippingMailboxTile(obj)
@@ -451,6 +796,12 @@ function BunkersAnywhere.setInvisibleGeneratorCentralState(centralObj, playerObj
         playerObj:setHaloNote(getText("IGUI_Bunker_CentralNeedLinkFirst"), 255, 120, 0, 350)
         return
     end
+    local isSource = (node and node.source ~= false) or (md and md.baInvisibleGeneratorIsSource == true)
+    local energy = BunkersAnywhere.getCentralEnergyPercent(node, md)
+    if wantOn and isSource and energy <= 0 then
+        playerObj:setHaloNote("La central no tiene energia (0%). Inserta una bateria.", 255, 120, 0, 350)
+        return
+    end
     local current = (node and node.active == true) or (md and md.baInvisibleGeneratorLocalOn == true) or false
     if current == wantOn then
         local key = wantOn and "IGUI_Bunker_CentralGeneratorAlreadyOn" or "IGUI_Bunker_CentralGeneratorAlreadyOff"
@@ -506,6 +857,23 @@ end
 function BunkersAnywhere.onConnectInvisibleGeneratorToOtherCentral(centralObj, playerObj, targetX, targetY, targetZ)
     if luautils.walk(playerObj, centralObj:getSquare()) then
         ISTimedActionQueue.add(ISBunkerAction:new(playerObj, centralObj:getSquare(), 180, "Loot", "LightSwitch", BunkersAnywhere.connectInvisibleGeneratorToOtherCentral, centralObj, playerObj, targetX, targetY, targetZ))
+    end
+end
+
+function BunkersAnywhere.onInsertCentralBattery(centralObj, playerObj, fullType)
+    if luautils.walk(playerObj, centralObj:getSquare()) then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, centralObj:getSquare(), 85, "Loot", "LightSwitch", BunkersAnywhere.insertCentralBattery, centralObj, playerObj, fullType))
+    else
+        -- Fallback for MP/pathing oddities near hidden generator tiles.
+        BunkersAnywhere.insertCentralBattery(centralObj, playerObj, fullType)
+    end
+end
+
+function BunkersAnywhere.onInsertAnyCentralBattery(centralObj, playerObj)
+    if luautils.walk(playerObj, centralObj:getSquare()) then
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, centralObj:getSquare(), 85, "Loot", "LightSwitch", BunkersAnywhere.insertAnyCentralBattery, centralObj, playerObj))
+    else
+        BunkersAnywhere.insertAnyCentralBattery(centralObj, playerObj)
     end
 end
 
@@ -591,25 +959,72 @@ end
 Events.OnFillInventoryObjectContextMenu.Add(BunkersAnywhereCentralInventoryContext)
 
 local function BunkersAnywhereCentralWorldContext(player, context, worldobjects, test)
+    if not worldobjects then return end
     local playerObj = getSpecificPlayer(player)
-    local sq = worldobjects[1]:getSquare()
+    if not playerObj then return end
 
     local centralObj = nil
     local mailObj = nil
-    local objects = sq:getObjects()
-    for i = 0, objects:size() - 1 do
-        local obj = objects:get(i)
-        if not centralObj and BunkersAnywhere.isInvisibleCentralTile(obj) then
-            centralObj = obj
-        end
-        if not mailObj and BunkersAnywhere.isShippingMailboxTile(obj) then
-            mailObj = obj
+    local function scanSquareObjects(sq)
+        if not sq then return end
+        local objects = sq:getObjects()
+        if not objects then return end
+        for i = 0, objects:size() - 1 do
+            local obj = objects:get(i)
+            if not centralObj and BunkersAnywhere.isInvisibleCentralTile(obj) then
+                centralObj = obj
+            end
+            if not mailObj and BunkersAnywhere.isShippingMailboxTile(obj) then
+                mailObj = obj
+            end
         end
     end
 
+    if worldobjects.size and worldobjects.get then
+        for i = 0, worldobjects:size() - 1 do
+            local wo = worldobjects:get(i)
+            local sq = wo and wo.getSquare and wo:getSquare() or nil
+            scanSquareObjects(sq)
+            if centralObj and mailObj then break end
+        end
+    else
+        for _, wo in ipairs(worldobjects) do
+            local sq = wo and wo.getSquare and wo:getSquare() or nil
+            scanSquareObjects(sq)
+            if centralObj and mailObj then break end
+        end
+    end
+
+    if not centralObj or not mailObj then
+        scanSquareObjects(playerObj:getSquare())
+    end
+
     if centralObj then
+        local hadClientDebug = false
+        if getTimestampMs then
+            local now = getTimestampMs()
+            local last = BunkersAnywhere._lastServerInvDebugRequestMs or 0
+            if now - last >= 1200 then
+                hadClientDebug = true
+                BunkersAnywhere._lastServerInvDebugRequestMs = now
+            end
+        else
+            hadClientDebug = true
+        end
+
+        BunkersAnywhere.debugLogBatteryInventoryClient(playerObj, "OnFillWorldObjectContextMenu")
+        if hadClientDebug and sendClientCommand then
+            sendClientCommand("BunkersAnywhere", "DebugCentralBatteryInventory", {
+                reason = "OnFillWorldObjectContextMenu",
+                onlineID = playerObj.getOnlineID and playerObj:getOnlineID() or -1,
+                username = playerObj.getUsername and playerObj:getUsername() or "",
+            })
+        end
+
         local md = centralObj:getModData()
         local sqCentral = centralObj:getSquare()
+        local elecLevel = BunkersAnywhere.getPlayerElectricityLevel(playerObj)
+        local needElec = BunkersAnywhere.CentralSkill.MinElectricityToConnect
         local store = BunkersAnywhere.getInvisibleGeneratorStore()
         local currentKey = BunkersAnywhere.getInvisibleGeneratorNodeKey(sqCentral:getX(), sqCentral:getY(), sqCentral:getZ())
         local currentNode = store.nodes and store.nodes[currentKey] or nil
@@ -621,8 +1036,55 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
 
         local isKnown = currentNode ~= nil
         local isSource = (currentNode and currentNode.source ~= false) or (md and md.baInvisibleGeneratorIsSource == true)
+        local energyPercent = BunkersAnywhere.getCentralEnergyPercent(currentNode, md)
         if not isSource then
-            context:addOption(getText("ContextMenu_ConnectInvisibleGeneratorCentral"), centralObj, BunkersAnywhere.onConnectInvisibleGeneratorCentral, playerObj)
+            local connectOpt = context:addOption(getText("ContextMenu_ConnectInvisibleGeneratorCentral"), centralObj, BunkersAnywhere.onConnectInvisibleGeneratorCentral, playerObj)
+            if elecLevel < needElec then
+                connectOpt.notAvailable = true
+                connectOpt.toolTip = ISToolTip:new()
+                connectOpt.toolTip:initialise()
+                connectOpt.toolTip:setVisible(false)
+                connectOpt.toolTip.description = "Requiere Electricidad " .. tostring(needElec) .. " (actual " .. tostring(elecLevel) .. ")"
+            end
+        else
+            local info = context:addOption("Energia central: " .. tostring(energyPercent) .. "%")
+            info.notAvailable = true
+
+            if energyPercent < BunkersAnywhere.CentralBattery.MaxEnergy then
+                context:addOption("Cargar bateria automaticamente", centralObj, BunkersAnywhere.onInsertAnyCentralBattery, playerObj)
+            end
+
+            local addSub = context:addOption("Cargar central con bateria")
+            local addSubCtx = ISContextMenu:getNew(context)
+            context:addSubMenu(addSub, addSubCtx)
+            local hasInsertOption = false
+
+            for _, fullType in ipairs(BunkersAnywhere.CentralBattery.Types) do
+                local charge = BunkersAnywhere.getCentralBatteryCharge(fullType)
+                local shortType = BunkersAnywhere.getShortTypeFromFullType(fullType) or fullType
+                local have = BunkersAnywhere.countBatteryTypeAvailable(playerObj, fullType)
+                local after = energyPercent + charge
+                local label = "Insertar " .. shortType .. " (+" .. tostring(charge) .. "%) [" .. tostring(have) .. "]"
+                local opt = addSubCtx:addOption(label, centralObj, BunkersAnywhere.onInsertCentralBattery, playerObj, fullType)
+
+                if charge <= 0 or after > BunkersAnywhere.CentralBattery.MaxEnergy then
+                    opt.notAvailable = true
+                    opt.toolTip = ISToolTip:new()
+                    opt.toolTip:initialise()
+                    opt.toolTip:setVisible(false)
+                    if after > BunkersAnywhere.CentralBattery.MaxEnergy then
+                        opt.toolTip.description = "Supera 100% (" .. tostring(energyPercent) .. "% + " .. tostring(charge) .. "%)"
+                    else
+                        opt.toolTip.description = "Bateria no valida"
+                    end
+                else
+                    hasInsertOption = true
+                end
+            end
+
+            if not hasInsertOption then
+                addSub.notAvailable = true
+            end
         end
 
         local connectSub = nil
@@ -631,7 +1093,8 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
             if node and node.z == BunkersAnywhere.InvisibleCentralGenerator.ZLevel then
                 if not (node.x == sqCentral:getX() and node.y == sqCentral:getY() and node.z == sqCentral:getZ()) then
                     local targetIsSource = (node.source ~= false)
-                    local targetIsOn = (node.active == true)
+                    local targetEnergy = BunkersAnywhere.getCentralEnergyPercent(node, nil)
+                    local targetIsOn = (node.active == true) and (targetEnergy > 0)
                     if targetIsSource and targetIsOn then
                         local targetKey = BunkersAnywhere.getInvisibleGeneratorNodeKey(node.x, node.y, node.z)
                         local alreadyLinked = currentNode and currentNode.links and currentNode.links[targetKey] == true
@@ -651,7 +1114,10 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
                             opt.toolTip:initialise()
                             opt.toolTip:setVisible(false)
                             opt.toolTip.description = getText("IGUI_Bunker_CentralNeedWire", tostring(need), tostring(have))
-                            if have < need then
+                            if elecLevel < needElec then
+                                opt.notAvailable = true
+                                opt.toolTip.description = "Requiere Electricidad " .. tostring(needElec) .. " (actual " .. tostring(elecLevel) .. ")"
+                            elseif have < need then
                                 opt.notAvailable = true
                             end
                         end
@@ -706,12 +1172,25 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
         end
     end
 
-    local hasOwnedInvisibleGenerator = false
-    for _, wo in ipairs(worldobjects) do
-        if BunkersAnywhere.hideOwnedInvisibleGenerator(wo) then
-            hasOwnedInvisibleGenerator = true
-            break
+    local hasOwnedInvisibleGenerator = centralObj ~= nil
+    if worldobjects.size and worldobjects.get then
+        for i = 0, worldobjects:size() - 1 do
+            local wo = worldobjects:get(i)
+            if BunkersAnywhere.hideOwnedInvisibleGenerator(wo) then
+                hasOwnedInvisibleGenerator = true
+                break
+            end
         end
+    else
+        for _, wo in ipairs(worldobjects) do
+            if BunkersAnywhere.hideOwnedInvisibleGenerator(wo) then
+                hasOwnedInvisibleGenerator = true
+                break
+            end
+        end
+    end
+    if not hasOwnedInvisibleGenerator then
+        hasOwnedInvisibleGenerator = hasOwnedInvisibleGeneratorNearPlayer(playerObj, 1)
     end
 
     if hasOwnedInvisibleGenerator then
@@ -726,7 +1205,14 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
     end
 end
 
-Events.OnFillWorldObjectContextMenu.Add(BunkersAnywhereCentralWorldContext)
+local function BunkersAnywhereCentralWorldContextSafe(player, context, worldobjects, test)
+    local ok, err = pcall(BunkersAnywhereCentralWorldContext, player, context, worldobjects, test)
+    if not ok then
+        print("[BunkersAnywhere] CentralWorldContext error: " .. tostring(err))
+    end
+end
+
+Events.OnFillWorldObjectContextMenu.Add(BunkersAnywhereCentralWorldContextSafe)
 
 local _baGeneratorHideTick = 0
 local function BunkersAnywhereOnTickHideOwnedGenerators()

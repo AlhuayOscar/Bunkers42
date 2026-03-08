@@ -519,33 +519,59 @@ end
 Events.OnFillInventoryObjectContextMenu.Add(BunkersAnywhereInventoryContext)
 
 local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
+    if not worldobjects then return end
     local playerObj = getSpecificPlayer(player)
-    local sq = worldobjects[1]:getSquare()
+    if not playerObj then return end
     local z = playerObj:getZ()
-    
+
     local targetObj = nil
     local stairObj = nil
-    local objects = sq:getObjects()
-    for i = 0, objects:size() - 1 do
-        local obj = objects:get(i)
-        if obj and obj.getModData then
-            local modData = obj:getModData()
-            if modData and modData.bunkerType then
-                targetObj = obj
-            elseif BunkersAnywhere.isStair(obj) then
-                stairObj = obj
+    local function scanSquare(sq)
+        if not sq then return end
+        local objects = sq:getObjects()
+        if not objects then return end
+        for i = 0, objects:size() - 1 do
+            local obj = objects:get(i)
+            if obj and obj.getModData then
+                local modData = obj:getModData()
+                if modData and modData.bunkerType then
+                    targetObj = obj
+                elseif BunkersAnywhere.isStair(obj) then
+                    stairObj = obj
+                end
             end
         end
     end
 
-    -- MenÃº para objetos del MOD
+    if worldobjects.size and worldobjects.get then
+        for i = 0, worldobjects:size() - 1 do
+            local wo = worldobjects:get(i)
+            local sq = wo and wo.getSquare and wo:getSquare() or nil
+            scanSquare(sq)
+            if targetObj and stairObj then break end
+        end
+    else
+        for _, wo in ipairs(worldobjects) do
+            local sq = wo and wo.getSquare and wo:getSquare() or nil
+            scanSquare(sq)
+            if targetObj and stairObj then break end
+        end
+    end
+
+    if not targetObj or not stairObj then
+        scanSquare(playerObj:getSquare())
+    end
+
+    -- Men� para objetos del MOD
     if targetObj then
+        local sq = targetObj:getSquare()
+        if not sq then return end
         local bType = targetObj:getModData().bunkerType
         local optionName = (bType == "Entrada de Bunker") and getText("ContextMenu_EntranceDown") or getText("ContextMenu_LadderUp")
         local submenu = context:addOption(optionName)
         local submenuCtx = ISContextMenu:getNew(context)
         context:addSubMenu(submenu, submenuCtx)
-        
+
         if bType == "Entrada de Bunker" then
             local downOption = submenuCtx:addOption(getText("ContextMenu_GoDownBasement"), targetObj, BunkersAnywhere.onTeleport, playerObj, z - 1)
             if not BunkersAnywhere.canTeleportTo(sq:getX(), sq:getY(), z - 1) then downOption.notAvailable = true end
@@ -557,7 +583,7 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
         end
     end
 
-    -- MenÃº para el BUNKER KIT (sobre escaleras vanilla)
+    -- Men� para el BUNKER KIT (sobre escaleras vanilla)
     if stairObj then
         local inv = playerObj:getInventory()
         if inv:containsWithModule("Base.BunkerKit") then
@@ -565,8 +591,14 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
         end
     end
 end
+local function BunkersAnywhereWorldContextSafe(player, context, worldobjects, test)
+    local ok, err = pcall(BunkersAnywhereWorldContext, player, context, worldobjects, test)
+    if not ok then
+        print("[BunkersAnywhere] DoorWorldContext error: " .. tostring(err))
+    end
+end
 
-Events.OnFillWorldObjectContextMenu.Add(BunkersAnywhereWorldContext)
+Events.OnFillWorldObjectContextMenu.Add(BunkersAnywhereWorldContextSafe)
 
 local function BunkersAnywhereOnKeyPressed(key)
     if key ~= getCore():getKey("Interact") then return end
