@@ -779,7 +779,28 @@ local function maintainNoToxicAroundPlayers()
     local cell = getCell()
     if not cell then return end
 
-    forEachOnlinePlayerSafe(function(player)
+    local function eachPlayer(fn)
+        if not fn then return end
+        if getOnlinePlayers then
+            local players = getOnlinePlayers()
+            if players and players.size and players.get then
+                for i = 0, players:size() - 1 do
+                    local p = players:get(i)
+                    if p then fn(p) end
+                end
+                return
+            end
+        end
+        if getNumActivePlayers and getSpecificPlayer then
+            local num = tonumber(getNumActivePlayers()) or 0
+            for i = 0, num - 1 do
+                local p = getSpecificPlayer(i)
+                if p then fn(p) end
+            end
+        end
+    end
+
+    eachPlayer(function(player)
         local sq = player and player.getSquare and player:getSquare() or nil
         if not sq then return end
 
