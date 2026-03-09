@@ -715,6 +715,38 @@ local function forceNoToxic(square)
     end
 end
 
+local _baNoToxicTick = 0
+local function maintainNoToxicAroundPlayers()
+    _baNoToxicTick = _baNoToxicTick + 1
+    if _baNoToxicTick < 20 then return end
+    _baNoToxicTick = 0
+
+    local cell = getCell()
+    if not cell then return end
+
+    forEachOnlinePlayerSafe(function(player)
+        local sq = player and player.getSquare and player:getSquare() or nil
+        if not sq then return end
+
+        -- Always clear the building the player is currently in.
+        forceNoToxic(sq)
+
+        -- Also clear nearby loaded squares so upper floors / basement-adjacent
+        -- rooms don't briefly flip back to toxic while the player moves.
+        local px, py, pz = sq:getX(), sq:getY(), sq:getZ()
+        for x = px - 8, px + 8 do
+            for y = py - 8, py + 8 do
+                for z = pz - 2, pz + 2 do
+                    local gs = cell:getGridSquare(x, y, z)
+                    if gs then
+                        forceNoToxic(gs)
+                    end
+                end
+            end
+        end
+    end)
+end
+
 local function copyInstalledBatteriesList(installed)
     local result = {}
     if not installed then return result end
@@ -2085,3 +2117,4 @@ Events.EveryOneMinute.Add(cleanupAndMaintain)
 -- Disabled to avoid rapid ON/OFF oscillation in MP.
 -- Events.OnTick.Add(maintainPowerSafety)
 Events.OnTick.Add(maintainLoadedBasementPowerAroundPlayers)
+Events.OnTick.Add(maintainNoToxicAroundPlayers)
