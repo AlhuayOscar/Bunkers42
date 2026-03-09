@@ -223,8 +223,13 @@ end
 
 function BunkersAnywhere.isInvisibleCentralSpriteName(spriteName)
     if not spriteName then return false end
+local function baCanTransmitGlobalModData()
+    return not (isClient and isClient())
+end
     if spriteName == BunkersAnywhere.InvisibleCentralGenerator.SpriteName then return true end
     if spriteName == BunkersAnywhere.InvisibleCentralGenerator.SpriteNameAlt then return true end
+    if string.match(spriteName, "^location_hospitality_sunstarmotel_01_4[89]$") then return true end
+    if string.match(spriteName, "^location_hospitality_sunstarmotel_01_50$") then return true end
     if string.match(spriteName, "^location_business_bank_01_6%d$") then return true end
     if string.match(spriteName, "^location_business_bank_01_7%d$") then return true end
     return false
@@ -239,7 +244,10 @@ end
 
 local function isCentralSpriteFamilyName(spriteName)
     if not spriteName then return false end
-    return string.match(spriteName, "^location_business_bank_01_") ~= nil
+    if string.match(spriteName, "^location_business_bank_01_") ~= nil then return true end
+    if string.match(spriteName, "^location_hospitality_sunstarmotel_01_4[89]$") ~= nil then return true end
+    if string.match(spriteName, "^location_hospitality_sunstarmotel_01_50$") ~= nil then return true end
+    return false
 end
 
 local function setCentralSpriteMoveableProps(spriteName)
@@ -265,6 +273,9 @@ function BunkersAnywhere.registerCentralMoveableSprites()
         "location_business_bank_01_65",
         "location_business_bank_01_66",
         "location_business_bank_01_67",
+        "location_hospitality_sunstarmotel_01_48",
+        "location_hospitality_sunstarmotel_01_49",
+        "location_hospitality_sunstarmotel_01_50",
     }
 
     for i = 1, #sprites do
@@ -943,7 +954,7 @@ function BunkersAnywhere.connectInvisibleGeneratorCentral(centralObj, playerObj)
     store.nodes[key].energy = BunkersAnywhere.getCentralEnergyPercent(store.nodes[key], nil)
     store.nodes[key].active = store.nodes[key].energy > 0
     store.nodes[key].source = true
-    if ModData.transmit then
+    if baCanTransmitGlobalModData() and ModData.transmit then
         ModData.transmit(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
     end
 
@@ -965,7 +976,7 @@ function BunkersAnywhere.registerInvisibleGeneratorCentralCandidate(centralObj)
     local key = BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ())
     if not (store.nodes and store.nodes[key]) then
         store.nodes[key] = { x = sq:getX(), y = sq:getY(), z = sq:getZ(), active = true, source = false, links = {}, energy = 0, radiusBonus = 0, installedBatteries = {} }
-        if ModData.transmit then
+        if baCanTransmitGlobalModData() and ModData.transmit then
             ModData.transmit(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
         end
     end
@@ -1010,7 +1021,7 @@ function BunkersAnywhere.connectInvisibleGeneratorToOtherCentral(centralObj, pla
     end
 
     BunkersAnywhere.linkInvisibleGeneratorNodes(store, keyA, keyB)
-    if ModData.transmit then
+    if baCanTransmitGlobalModData() and ModData.transmit then
         ModData.transmit(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
     end
     if sendClientCommand then
@@ -1071,7 +1082,7 @@ function BunkersAnywhere.upgradeCentralRadius(centralObj, playerObj)
     if centralObj.transmitModData then
         centralObj:transmitModData()
     end
-    if ModData.transmit then
+    if baCanTransmitGlobalModData() and ModData.transmit then
         ModData.transmit(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
     end
 
@@ -1296,7 +1307,7 @@ function BunkersAnywhere.setInvisibleGeneratorCentralState(centralObj, playerObj
 
     if store.nodes[key] then
         store.nodes[key].active = wantOn
-        if ModData.transmit then
+        if baCanTransmitGlobalModData() and ModData.transmit then
             ModData.transmit(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
         end
     end

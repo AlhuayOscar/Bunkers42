@@ -1,6 +1,79 @@
 BunkersAnywhere = BunkersAnywhere or {}
 require "ISUI/ISInventoryPaneContextMenu"
 
+local BA_DOOR_TEXT = {
+    EN = {
+        ContextMenu_InstallEntrance = "Install Entrance (Down Only)",
+        ContextMenu_InstallLadder = "Install Ladder (Up Only)",
+        ContextMenu_UnpackBunkerKit = "Unpack Bunker Kit",
+        ContextMenu_EntranceDown = "Entrance (Down)",
+        ContextMenu_LadderUp = "Ladder (Up)",
+        ContextMenu_GoDownBasement = "Go Down to Basement (Z-1)",
+        ContextMenu_UninstallEntrance = "Uninstall Entrance",
+        ContextMenu_GoUpFloor = "Go Up to Floor (Z+1)",
+        ContextMenu_UninstallLadder = "Uninstall Ladder",
+        ContextMenu_InstallBunkerKit = "Install Bunker Kit (Replace Stairs)",
+    },
+    ES = {
+        ContextMenu_InstallEntrance = "Instalar Entrada (Solo Bajar)",
+        ContextMenu_InstallLadder = "Instalar Escalera (Solo Subir)",
+        ContextMenu_UnpackBunkerKit = "Desempaquetar Kit de Bunker",
+        ContextMenu_EntranceDown = "Entrada (Bajar)",
+        ContextMenu_LadderUp = "Escalera (Subir)",
+        ContextMenu_GoDownBasement = "Bajar al Sotano (Z-1)",
+        ContextMenu_UninstallEntrance = "Desinstalar Entrada",
+        ContextMenu_GoUpFloor = "Subir a Planta Baja (Z+1)",
+        ContextMenu_UninstallLadder = "Desinstalar Escalera",
+        ContextMenu_InstallBunkerKit = "Instalar Kit de Bunker (Sustituir Escaleras)",
+    },
+}
+
+local function baDoorLanguageCode()
+    local candidates = {}
+    if Translator and Translator.getLanguage then
+        local ok, value = pcall(function() return Translator.getLanguage() end)
+        if ok and value then table.insert(candidates, value) end
+    end
+    if getCore then
+        local core = getCore()
+        if core then
+            if core.getOptionLanguageName then
+                local ok, value = pcall(function() return core:getOptionLanguageName() end)
+                if ok and value then table.insert(candidates, value) end
+            end
+            if core.getOptionLanguage then
+                local ok, value = pcall(function() return core:getOptionLanguage() end)
+                if ok and value then table.insert(candidates, value) end
+            end
+        end
+    end
+    for i = 1, #candidates do
+        local raw = string.upper(tostring(candidates[i] or ""))
+        if raw == "ES" or raw == "ES_AR" or raw == "ES-AR" or raw == "ES_ES" or raw == "ES-ES" then return "ES" end
+        if raw == "SPANISH" or string.find(raw, "SPANISH", 1, true) == 1 then return "ES" end
+        if raw == "EN" or raw == "EN_US" or raw == "EN-US" or raw == "EN_GB" or raw == "EN-GB" then return "EN" end
+        if raw == "ENGLISH" or string.find(raw, "ENGLISH", 1, true) == 1 then return "EN" end
+    end
+    return "EN"
+end
+
+local function baDoorText(key, ...)
+    local translated = getText and getText(key, ...) or key
+    if translated and translated ~= key then
+        return translated
+    end
+
+    local lang = baDoorLanguageCode()
+    local tableByLang = BA_DOOR_TEXT[lang] or BA_DOOR_TEXT.EN
+    local template = tableByLang[key] or BA_DOOR_TEXT.EN[key] or key
+    local result = tostring(template)
+    local args = { ... }
+    for i = 1, #args do
+        result = string.gsub(result, "%%" .. tostring(i), tostring(args[i]))
+    end
+    return result
+end
+
 -- Sprites dinÃ¡micos
 BunkersAnywhere.Sprites = {
     InsideEntrance = "street_decoration_01_15", -- Escotilla/Manhole
@@ -237,13 +310,25 @@ function BunkersAnywhere.isStair(obj)
                    string.find(spriteName, "carpentry_02_88") or 
                    string.find(spriteName, "carpentry_02_89") or 
                    string.find(spriteName, "carpentry_02_90") or 
+                   string.find(spriteName, "carpentry_02_96") or
+                   string.find(spriteName, "carpentry_02_97") or
+                   string.find(spriteName, "carpentry_02_98") or
                    string.find(spriteName, "constructedobjects_01_88") or 
                    string.find(spriteName, "constructedobjects_01_89") or 
                    string.find(spriteName, "constructedobjects_01_90") or
+                   string.find(spriteName, "constructedobjects_01_96") or
+                   string.find(spriteName, "constructedobjects_01_97") or
+                   string.find(spriteName, "constructedobjects_01_98") or
                    string.find(spriteName, "fixtures_stairs") or
+                   string.find(spriteName, "crafted_02_96") or
+                   string.find(spriteName, "crafted_02_97") or
+                   string.find(spriteName, "crafted_02_98") or
                    string.find(spriteName, "crafted_02_106") or
                    string.find(spriteName, "crafted_02_107") or
                    string.find(spriteName, "crafted_02_108") or
+                   string.find(spriteName, "location_hospitality_sunstarmotel_01_48") or
+                   string.find(spriteName, "location_hospitality_sunstarmotel_01_49") or
+                   string.find(spriteName, "location_hospitality_sunstarmotel_01_50") or
                    string.find(spriteName, "location_shop_mall_01_6") or -- Mall escalators
                    string.find(spriteName, "location_shop_mall_01_7") or
                    string.find(spriteName, "location_shop_mall_01_8") then
@@ -336,6 +421,30 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
     local topZ = z + 1
     local woodFloorSprite = "carpentry_02_57"
 
+    local function shouldCreateUpperSupportFloor(baseSq, topSq)
+        if z < 0 then return true end
+        if not baseSq then return false end
+        if baseSq:getX() == x and baseSq:getY() == y then return true end
+        if baseSq:getRoom() ~= nil then return true end
+
+        local centerBuilding = sq:getBuilding()
+        local baseBuilding = baseSq:getBuilding()
+        if centerBuilding and baseBuilding and centerBuilding == baseBuilding then
+            return true
+        end
+
+        if topSq then
+            if topSq:getFloor() ~= nil then return true end
+            if topSq:getRoom() ~= nil then return true end
+            local topBuilding = topSq:getBuilding()
+            if centerBuilding and topBuilding and centerBuilding == topBuilding then
+                return true
+            end
+        end
+
+        return false
+    end
+
     -- 1. Buscar TODAS las partes de la escalera y barandillas y removerlas correctamente (9x9 para escaleras largas)
     local itemsToRemove = {}
     for ix = -4, 4 do
@@ -374,7 +483,7 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
                 tSq = IsoGridSquare.new(cell, nil, item.xx, item.yy, topZ)
                 cell:ConnectNewSquare(tSq, false)
             end
-            if tSq then
+            if tSq and shouldCreateUpperSupportFloor(s, tSq) then
                 BunkersAnywhere.ensureFloor(tSq, woodFloorSprite)
             end
             patchedSquares[key] = true
@@ -405,7 +514,7 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
                 cell:ConnectNewSquare(tSq, false)
             end
             
-            if tSq then
+            if tSq and shouldCreateUpperSupportFloor(s, tSq) then
                 -- Si no hay suelo, lo aÃ±adimos y sincronizamos
                 BunkersAnywhere.ensureFloor(tSq, woodFloorSprite)
             end
@@ -634,17 +743,17 @@ local function BunkersAnywhereInventoryContext(player, context, items)
     local worldobjects = { playerObj:getCurrentSquare() } -- Fallback
 
     if bunkerDoorItem then
-        local option = context:addOption(getText("ContextMenu_InstallEntrance"), worldobjects, BunkersAnywhere.onPlaceObject, playerObj, bunkerDoorItem, "Entrada de Bunker", -1)
+        local option = context:addOption(baDoorText("ContextMenu_InstallEntrance"), worldobjects, BunkersAnywhere.onPlaceObject, playerObj, bunkerDoorItem, "Entrada de Bunker", -1)
         if not BunkersAnywhere.canTeleportTo(playerObj:getX(), playerObj:getY(), playerObj:getZ() - 1) then option.notAvailable = true end
     end
 
     if bunkerLadderItem then
-        local option = context:addOption(getText("ContextMenu_InstallLadder"), worldobjects, BunkersAnywhere.onPlaceObject, playerObj, bunkerLadderItem, "Escalera de Bunker", 1)
+        local option = context:addOption(baDoorText("ContextMenu_InstallLadder"), worldobjects, BunkersAnywhere.onPlaceObject, playerObj, bunkerLadderItem, "Escalera de Bunker", 1)
         if not BunkersAnywhere.canTeleportTo(playerObj:getX(), playerObj:getY(), playerObj:getZ() + 1) then option.notAvailable = true end
     end
 
     if bunkerKitItem then
-        context:addOption(getText("ContextMenu_UnpackBunkerKit"), bunkerKitItem, BunkersAnywhere.onUnpackBunkerKit, playerObj)
+        context:addOption(baDoorText("ContextMenu_UnpackBunkerKit"), bunkerKitItem, BunkersAnywhere.onUnpackBunkerKit, playerObj)
     end
 end
 
@@ -699,19 +808,19 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
         local sq = targetObj:getSquare()
         if not sq then return end
         local bType = targetObj:getModData().bunkerType
-        local optionName = (bType == "Entrada de Bunker") and getText("ContextMenu_EntranceDown") or getText("ContextMenu_LadderUp")
+        local optionName = (bType == "Entrada de Bunker") and baDoorText("ContextMenu_EntranceDown") or baDoorText("ContextMenu_LadderUp")
         local submenu = context:addOption(optionName)
         local submenuCtx = ISContextMenu:getNew(context)
         context:addSubMenu(submenu, submenuCtx)
 
         if bType == "Entrada de Bunker" then
-            local downOption = submenuCtx:addOption(getText("ContextMenu_GoDownBasement"), targetObj, BunkersAnywhere.onTeleport, playerObj, z - 1)
+            local downOption = submenuCtx:addOption(baDoorText("ContextMenu_GoDownBasement"), targetObj, BunkersAnywhere.onTeleport, playerObj, z - 1)
             if not BunkersAnywhere.canTeleportTo(sq:getX(), sq:getY(), z - 1) then downOption.notAvailable = true end
-            submenuCtx:addOption(getText("ContextMenu_UninstallEntrance"), targetObj, BunkersAnywhere.onRemove, playerObj, "Base.BunkerDoor")
+            submenuCtx:addOption(baDoorText("ContextMenu_UninstallEntrance"), targetObj, BunkersAnywhere.onRemove, playerObj, "Base.BunkerDoor")
         else
-            local upOption = submenuCtx:addOption(getText("ContextMenu_GoUpFloor"), targetObj, BunkersAnywhere.onTeleport, playerObj, z + 1)
+            local upOption = submenuCtx:addOption(baDoorText("ContextMenu_GoUpFloor"), targetObj, BunkersAnywhere.onTeleport, playerObj, z + 1)
             if not BunkersAnywhere.canTeleportTo(sq:getX(), sq:getY(), z + 1) then upOption.notAvailable = true end
-            submenuCtx:addOption(getText("ContextMenu_UninstallLadder"), targetObj, BunkersAnywhere.onRemove, playerObj, "Base.BunkerLadder")
+            submenuCtx:addOption(baDoorText("ContextMenu_UninstallLadder"), targetObj, BunkersAnywhere.onRemove, playerObj, "Base.BunkerLadder")
         end
     end
 
@@ -719,7 +828,7 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
     if stairObj then
         local inv = playerObj:getInventory()
         if inv:containsWithModule("Base.BunkerKit") then
-            context:addOption(getText("ContextMenu_InstallBunkerKit"), stairObj, BunkersAnywhere.onInstallBunkerKit, playerObj)
+            context:addOption(baDoorText("ContextMenu_InstallBunkerKit"), stairObj, BunkersAnywhere.onInstallBunkerKit, playerObj)
         end
     end
 end

@@ -37,6 +37,8 @@ local function isCentralSpriteName(spriteName)
     if not spriteName then return false end
     if spriteName == CFG.SpriteName then return true end
     if spriteName == CFG.SpriteNameAlt then return true end
+    if string.match(spriteName, "^location_hospitality_sunstarmotel_01_4[89]$") then return true end
+    if string.match(spriteName, "^location_hospitality_sunstarmotel_01_50$") then return true end
     if string.match(spriteName, "^location_business_bank_01_") then return true end
     if string.match(spriteName, "^location_business_bank_01_6%d$") then return true end
     if string.match(spriteName, "^location_business_bank_01_7%d$") then return true end
@@ -697,7 +699,18 @@ end
 local function forceNoToxic(square)
     if not square then return end
     local building = square:getBuilding()
-    if building and building.setToxic then
+    if not building or not building.setToxic then return end
+
+    local toxic = nil
+    if building.isToxic then
+        local ok, value = pcall(function() return building:isToxic() end)
+        if ok then toxic = value == true end
+    elseif building.getToxic then
+        local ok, value = pcall(function() return building:getToxic() end)
+        if ok then toxic = value == true end
+    end
+
+    if toxic == true then
         building:setToxic(false)
     end
 end
@@ -1986,21 +1999,12 @@ local function cleanupAndMaintain()
     else
         effective, providers = getNetworkState(store)
         if runtimeChanged then
-            -- Keep central UI/modData in sync while runtime drains, without
-            -- touching generator activation state (avoids flicker).
+            -- Runtime drain alone does not require re-scanning the full power
+            -- radius every minute. That work is expensive in SP and can stall
+            -- the game for large central ranges. Keep UI/modData synchronized
+            -- here; actual power-area refresh still happens when state/topology
+            -- changes and around loaded players via OnTick maintenance.
             syncCentralModDataFromState(store, effective, providers)
-            local activeNodes = collectWantedPowerNodes(store, effective)
-            for key, node in pairs(store.nodes) do
-                local square = getSquare(node.x, node.y, node.z)
-                if square then
-                    local wantOn = effective[key] == true
-                    applyExtendedBasementPowerForNode(node, wantOn)
-                    if wantOn then
-                        forceNoToxic(square)
-                    end
-                    clampGeneratorPowerToBasement(node, activeNodes)
-                end
-            end
         end
     end
 
