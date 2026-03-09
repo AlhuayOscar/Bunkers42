@@ -1,0 +1,52 @@
+Build 42.15.0 - Changelog (50 Fixes)
+
+1. Fixed raw translation keys showing in central menus instead of readable text.
+2. Added English and Spanish fallback text for central context menus.
+3. Added English and Spanish fallback text for bunker entrance placement menus.
+4. Added English and Spanish fallback text for ladder placement menus.
+5. Added English and Spanish fallback text for unpack/install bunker kit menus.
+6. Added English and Spanish fallback text for go up and go down menus.
+7. Added English and Spanish fallback text for uninstall menus.
+8. Fixed missing item display names showing as Base.BunkerKit, Base.BunkerDoor and Base.BunkerLadder.
+9. Added direct display names for bunker items to avoid 42.15 translation failures.
+10. Added support for location_hospitality_sunstarmotel_01_48.
+11. Added support for location_hospitality_sunstarmotel_01_49.
+12. Added support for location_hospitality_sunstarmotel_01_50.
+13. Added support for crafted_02_96 stairs detection.
+14. Added support for crafted_02_97 stairs detection.
+15. Added support for crafted_02_98 stairs detection.
+16. Added support for constructedobjects_01_96 stairs detection.
+17. Added support for constructedobjects_01_97 stairs detection.
+18. Added support for constructedobjects_01_98 stairs detection.
+19. Added support for carpentry_02_96 stairs detection.
+20. Added support for carpentry_02_97 stairs detection.
+21. Added support for carpentry_02_98 stairs detection.
+22. Fixed central menu text for connect, turn on, turn off and related actions.
+23. Fixed central battery load and remove menu text.
+24. Fixed electricity and cable tooltip text around centrals.
+25. Reduced heavy 1-minute central maintenance lag in Single Player.
+26. Prevented full radius rescans when only runtime minutes changed.
+27. Fixed multiplayer right-click errors in bunker inventory context menus.
+28. Fixed multiplayer right-click errors in bunker world context menus.
+29. Restored missing baDoorText helper in the Build 42 client files.
+30. Stopped true clients from transmitting invalid GlobalModData from the central client code.
+31. Reduced toxic building spam by avoiding pointless false updates.
+32. Fixed a server-side nil call in maintainNoToxicAroundPlayers.
+33. Added player-area no-toxic maintenance around bunker users.
+34. Improved toxic-fumes suppression around basement, ground floor and upper floors.
+35. Fixed upper floor support generation so bunker conversions no longer create large outside wood platforms by mistake.
+36. Restricted upper support floors to interior or valid connected building squares.
+37. Added Electric Central as a proper item with icon and loot distribution.
+38. Added crafting recipes for Electric Central.
+39. Added crafting recipes for Bunker Kit with new material requirements.
+40. Added recipe variants for normal metal sheets and small metal sheets.
+41. Added recipe variants for metal pipes and metal bars.
+42. Rebalanced small sheet requirements to 24 for central recipes.
+43. Rebalanced small sheet requirements to 140 for bunker kit recipes.
+44. Adjusted Bunker Kit recipe skill requirements to Mechanics 1, Metalworking 1 and Carpentry 1 only.
+45. Added inventory rotation options for electric central north and west variants.
+46. Simplified electric central installation into an automatic north-facing install option.
+47. Corrected central wall sprite usage to Build 42.15 north/west variants.
+48. Fixed client crash caused by ISBunkerCentralCursor loading too early.
+49. Fixed electric central multiplayer toggle desync after turning it off and on again.
+50. Fixed Multiplayer Bunker Kit install desync by syncing hand equips and consuming the kit authoritatively.

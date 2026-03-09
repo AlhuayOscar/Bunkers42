@@ -414,12 +414,45 @@ function BunkersAnywhere.ensureFloor(sq, floorSprite)
 end
 
 -- FUNCIÃ“N: Usar el Bunker Kit en escaleras
-function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
+function BunkersAnywhere.useBunkerKit(stairObj, playerObj, kitItem)
     local sq = stairObj:getSquare()
     local x, y, z = sq:getX(), sq:getY(), sq:getZ()
     local cell = getCell()
     local topZ = z + 1
     local woodFloorSprite = "carpentry_02_57"
+
+    local function logBunkerKitDebug(stage)
+        local inv = playerObj and playerObj.getInventory and playerObj:getInventory() or nil
+        local kitCount = 0
+        local invWeight = "na"
+        if inv then
+            if inv.getItems then
+                local items = inv:getItems()
+                for i = 0, items:size() - 1 do
+                    local invItem = items:get(i)
+                    local fullType = invItem and invItem.getFullType and invItem:getFullType() or nil
+                    local itemType = invItem and invItem.getType and invItem:getType() or nil
+                    if fullType == "Base.BunkerKit" or itemType == "BunkerKit" then
+                        kitCount = kitCount + 1
+                    end
+                end
+            end
+            if inv.getContentsWeight then
+                local okWeight, valueWeight = pcall(function() return inv:getContentsWeight() end)
+                if okWeight and valueWeight ~= nil then invWeight = tostring(valueWeight) end
+            end
+        end
+        local kitText = "nil"
+        if kitItem then
+            local fullType = kitItem.getFullType and kitItem:getFullType() or "nil"
+            local itemType = kitItem.getType and kitItem:getType() or "nil"
+            local itemId = kitItem.getID and kitItem:getID() or "nil"
+            kitText = tostring(fullType) .. "/" .. tostring(itemType) .. " id=" .. tostring(itemId)
+        end
+        print("[BunkersAnywhere][BunkerKitDebug] stage=" .. tostring(stage) .. " player=" .. tostring(playerObj and playerObj.getUsername and playerObj:getUsername() or "nil") .. " square=" .. tostring(x) .. "," .. tostring(y) .. "," .. tostring(z) .. " kit=" .. kitText .. " kitCount=" .. tostring(kitCount) .. " invWeight=" .. tostring(invWeight))
+    end
+
+    logBunkerKitDebug("begin")
 
     local function shouldCreateUpperSupportFloor(baseSq, topSq)
         if z < 0 then return true end
@@ -569,8 +602,58 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
         end
     end
 
-    -- Consumir el Kit
-    playerObj:getInventory():RemoveOneOf("Base.BunkerKit")
+    -- Consumir el kit usado de forma robusta para que no quede pesando en inventario.
+    local inv = playerObj and playerObj.getInventory and playerObj:getInventory() or nil
+    if inv and kitItem then
+        print("[BunkersAnywhere][BunkerKitDebug] removing exact kitItem")
+        inv:Remove(kitItem)
+    elseif inv and inv.getItems then
+        local items = inv:getItems()
+        for i = items:size() - 1, 0, -1 do
+            local invItem = items:get(i)
+            local fullType = invItem and invItem.getFullType and invItem:getFullType() or nil
+            local itemType = invItem and invItem.getType and invItem:getType() or nil
+            if fullType == "Base.BunkerKit" or itemType == "BunkerKit" then
+                inv:Remove(invItem)
+                break
+            end
+        end
+    end
+
+    if playerObj then
+        local primary = playerObj.getPrimaryHandItem and playerObj:getPrimaryHandItem() or nil
+        local secondary = playerObj.getSecondaryHandItem and playerObj:getSecondaryHandItem() or nil
+        local function isBunkerKitHandItem(handItem)
+            local fullType = handItem and handItem.getFullType and handItem:getFullType() or nil
+            local itemType = handItem and handItem.getType and handItem:getType() or nil
+            return fullType == "Base.BunkerKit" or itemType == "BunkerKit"
+        end
+        if isBunkerKitHandItem(primary) and playerObj.setPrimaryHandItem then
+            playerObj:setPrimaryHandItem(nil)
+        end
+        if isBunkerKitHandItem(secondary) and playerObj.setSecondaryHandItem then
+            playerObj:setSecondaryHandItem(nil)
+        end
+        local backItem = playerObj.getClothingItem_Back and playerObj:getClothingItem_Back() or nil
+        if isBunkerKitHandItem(backItem) and playerObj.setClothingItem_Back then
+            playerObj:setClothingItem_Back(nil)
+        end
+        if inv and inv.removeAllItemsOfType then
+            inv:removeAllItemsOfType("BunkerKit", false, true)
+        end
+        if inv and inv.removeAllItemsOfFullType then
+            inv:removeAllItemsOfFullType("Base.BunkerKit", false, true)
+        end
+        if inv and inv.setDrawDirty then inv:setDrawDirty(true) end
+        if inv and inv.setDirty then inv:setDirty(true) end
+        if inv and inv.refreshWeight then pcall(function() inv:refreshWeight() end) end
+        if playerObj.resetEquippedHandsModels then playerObj:resetEquippedHandsModels() end
+        if playerObj.resetModelNextFrame then playerObj:resetModelNextFrame() end
+        if playerObj.resetModel then pcall(function() playerObj:resetModel() end) end
+        if playerObj.updateHandEquips then pcall(function() playerObj:updateHandEquips() end) end
+    end
+
+    logBunkerKitDebug("after_remove")
     playerObj:setHaloNote(getText("IGUI_Bunker_StructureSealed"), 0, 255, 100, 400)
 end
 
@@ -642,9 +725,75 @@ end
 -- Wrappers para forzar TimedActions en los MenÃºs
 -- ==========================================================
 
-function BunkersAnywhere.onInstallBunkerKit(stairObj, playerObj)
+function BunkersAnywhere.onInstallBunkerKit(stairObj, playerObj, kitItem)
+    local kitText = "nil"
+    if kitItem then
+        local fullType = kitItem.getFullType and kitItem:getFullType() or "nil"
+        local itemType = kitItem.getType and kitItem:getType() or "nil"
+        local itemId = kitItem.getID and kitItem:getID() or "nil"
+        kitText = tostring(fullType) .. "/" .. tostring(itemType) .. " id=" .. tostring(itemId)
+    end
+    print("[BunkersAnywhere][BunkerKitDebug] queue_install player=" .. tostring(playerObj and playerObj.getUsername and playerObj:getUsername() or "nil") .. " kit=" .. kitText)
+
+    local function isBunkerKitItem(item)
+        local fullType = item and item.getFullType and item:getFullType() or nil
+        local itemType = item and item.getType and item:getType() or nil
+        return fullType == "Base.BunkerKit" or itemType == "BunkerKit"
+    end
+
+    local inv = playerObj and playerObj.getInventory and playerObj:getInventory() or nil
+    if playerObj then
+        local primary = playerObj.getPrimaryHandItem and playerObj:getPrimaryHandItem() or nil
+        local secondary = playerObj.getSecondaryHandItem and playerObj:getSecondaryHandItem() or nil
+        if isBunkerKitItem(primary) and playerObj.setPrimaryHandItem then
+            playerObj:setPrimaryHandItem(nil)
+        end
+        if isBunkerKitItem(secondary) and playerObj.setSecondaryHandItem then
+            playerObj:setSecondaryHandItem(nil)
+        end
+        local backItem = playerObj.getClothingItem_Back and playerObj:getClothingItem_Back() or nil
+        if isBunkerKitItem(backItem) and playerObj.setClothingItem_Back then
+            playerObj:setClothingItem_Back(nil)
+        end
+        if playerObj.resetEquippedHandsModels then playerObj:resetEquippedHandsModels() end
+        if playerObj.resetModelNextFrame then playerObj:resetModelNextFrame() end
+        if playerObj.resetModel then pcall(function() playerObj:resetModel() end) end
+        if playerObj.updateHandEquips then pcall(function() playerObj:updateHandEquips() end) end
+    end
+
+    if inv and kitItem then
+        print("[BunkersAnywhere][BunkerKitDebug] pre_remove exact kitItem")
+        inv:Remove(kitItem)
+        kitItem = nil
+    elseif inv and inv.getItems then
+        local items = inv:getItems()
+        for i = items:size() - 1, 0, -1 do
+            local invItem = items:get(i)
+            if isBunkerKitItem(invItem) then
+                print("[BunkersAnywhere][BunkerKitDebug] pre_remove fallback kitItem")
+                inv:Remove(invItem)
+                break
+            end
+        end
+    end
+
+    if inv and inv.removeAllItemsOfType then
+        inv:removeAllItemsOfType("BunkerKit", false, true)
+    end
+    if inv and inv.removeAllItemsOfFullType then
+        inv:removeAllItemsOfFullType("Base.BunkerKit", false, true)
+    end
+    if inv and inv.setDrawDirty then inv:setDrawDirty(true) end
+    if inv and inv.setDirty then inv:setDirty(true) end
+    if isClient() and sendClientCommand then
+        sendClientCommand("BunkersAnywhere", "ConsumeBunkerKit", {
+            itemId = kitItem and kitItem.getID and kitItem:getID() or -1,
+            fullType = "Base.BunkerKit"
+        })
+    end
+
     if luautils.walk(playerObj, stairObj:getSquare()) then
-        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, stairObj:getSquare(), 250, "Loot", "Carpentry", BunkersAnywhere.useBunkerKit, stairObj, playerObj))
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, stairObj:getSquare(), 250, "Loot", "Carpentry", BunkersAnywhere.useBunkerKit, stairObj, playerObj, nil))
     end
 end
 
@@ -827,8 +976,21 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
     -- Men� para el BUNKER KIT (sobre escaleras vanilla)
     if stairObj then
         local inv = playerObj:getInventory()
-        if inv:containsWithModule("Base.BunkerKit") then
-            context:addOption(baDoorText("ContextMenu_InstallBunkerKit"), stairObj, BunkersAnywhere.onInstallBunkerKit, playerObj)
+        local bunkerKitItem = nil
+        local invItems = inv and inv.getItems and inv:getItems() or nil
+        if invItems then
+            for i = 0, invItems:size() - 1 do
+                local invItem = invItems:get(i)
+                local fullType = invItem and invItem.getFullType and invItem:getFullType() or nil
+                local itemType = invItem and invItem.getType and invItem:getType() or nil
+                if fullType == "Base.BunkerKit" or itemType == "BunkerKit" then
+                    bunkerKitItem = invItem
+                    break
+                end
+            end
+        end
+        if bunkerKitItem then
+            context:addOption(baDoorText("ContextMenu_InstallBunkerKit"), stairObj, BunkersAnywhere.onInstallBunkerKit, playerObj, bunkerKitItem)
         end
     end
 end

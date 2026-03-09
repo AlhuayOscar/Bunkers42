@@ -29,9 +29,20 @@ module Base
 
     item ElectricCentral
     {
-        ItemType = base:normal,
+        ItemType = base:Moveable,
         DisplayName = Electric Central,
         Icon = Central,
+        WorldObjectSprite = location_business_bank_01_68,
+        DisplayCategory = Household,
+        Weight = 40,
+    }
+
+    item ElectricCentralNorth
+    {
+        ItemType = base:Moveable,
+        DisplayName = Electric Central,
+        Icon = Central,
+        WorldObjectSprite = location_business_bank_01_69,
         DisplayCategory = Household,
         Weight = 40,
     }

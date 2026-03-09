@@ -5,6 +5,8 @@ BunkersAnywhere.InvisibleCentralGenerator = {
     DataKey = "BunkersAnywhereInvisibleCentralGenerators",
     SpriteName = "location_business_bank_01_67",
     SpriteNameAlt = "location_business_bank_01_66",
+    PlacementSpriteName = "location_business_bank_01_67",
+    PlacementSpriteNameAlt = "location_business_bank_01_66",
     ZLevel = -1,
     BaseRadius = 100,
     RadiusUpgradeBonus = 2000,
@@ -76,6 +78,16 @@ local BA_LOCAL_TEXT = {
         ContextMenu_ConnectToOtherCentral = "Connect to another central",
         ContextMenu_ConnectToOtherCentralCoord = "Connect to another central: %1, %2, %3",
         ContextMenu_CentralDependsOn = "This central depends on: %1",
+        ContextMenu_InstallElectricCentral = "Install automatically facing north (up-right)",
+        ContextMenu_AutoInstallElectricCentral = "Install automatically facing north (up-right)",
+        ContextMenu_PlaceElectricCentral = "Place electric central",
+        ContextMenu_CentralRotateNorth = "Place facing north",
+        ContextMenu_CentralRotateWest = "Place facing west",
+        IGUI_Bunker_CentralFaceNorthOrWest = "Face north or west to install the electric central",
+        IGUI_Bunker_CentralNeedFacingWall = "You need a matching interior wall on the side you are facing",
+        IGUI_Bunker_CentralInstallNeedWall = "You need an interior wall to place the electric central",
+        IGUI_Bunker_CentralInstalled = "Electric central installed",
+        IGUI_Bunker_CentralAlreadyPresent = "There is already an electric central here",
     },
     ES = {
         IGUI_Bunker_CentralGeneratorConnected = "Central local conectada (generador oculto sin toxicidad)",
@@ -110,6 +122,16 @@ local BA_LOCAL_TEXT = {
         ContextMenu_ConnectToOtherCentral = "Conectar con otra central",
         ContextMenu_ConnectToOtherCentralCoord = "Conectar con otra central: %1, %2, %3",
         ContextMenu_CentralDependsOn = "Esta central depende de: %1",
+        ContextMenu_InstallElectricCentral = "Instalar automaticamente hacia el norte (arriba a la derecha)",
+        ContextMenu_AutoInstallElectricCentral = "Instalar automaticamente hacia el norte (arriba a la derecha)",
+        ContextMenu_PlaceElectricCentral = "Colocar central electrica",
+        ContextMenu_CentralRotateNorth = "Colocar hacia el norte",
+        ContextMenu_CentralRotateWest = "Colocar hacia el oeste",
+        IGUI_Bunker_CentralFaceNorthOrWest = "Mira hacia el norte o el oeste para instalar la central electrica",
+        IGUI_Bunker_CentralNeedFacingWall = "Necesitas una pared interior del lado hacia el que estas mirando",
+        IGUI_Bunker_CentralInstallNeedWall = "Necesitas una pared interior para colocar la central electrica",
+        IGUI_Bunker_CentralInstalled = "Central electrica instalada",
+        IGUI_Bunker_CentralAlreadyPresent = "Ya hay una central electrica aqui",
     },
 }
 
@@ -172,6 +194,7 @@ local function baText(key, ...)
     local template = tableByLang[key] or BA_LOCAL_TEXT.EN[key] or key
     return baFormatText(template, ...)
 end
+BunkersAnywhere.getCentralUIText = baText
 local function baCanTransmitGlobalModData()
     return not (isClient and isClient())
 end
@@ -215,6 +238,12 @@ local function setCentralSpriteMoveableProps(spriteName)
     props:Set("PlaceTool", "Hammer")
     props:Set("PickUpLevel", "3")
     props:Set("PickUpWeight", "40")
+    props:Set("MoveType", "WallObject")
+    if spriteName == "location_business_bank_01_68" or spriteName == "location_business_bank_01_66" or spriteName == "location_hospitality_sunstarmotel_01_48" or spriteName == "location_hospitality_sunstarmotel_01_49" then
+        props:Set("Facing", "W")
+    else
+        props:Set("Facing", "N")
+    end
     props:Set("CustomName", "Electric Central")
     props:Set("GroupName", "Bunker")
 end
@@ -225,6 +254,10 @@ function BunkersAnywhere.registerCentralMoveableSprites()
         "location_business_bank_01_65",
         "location_business_bank_01_66",
         "location_business_bank_01_67",
+        "location_business_bank_01_68",
+        "location_business_bank_01_69",
+        "location_business_bank_01_70",
+        "location_business_bank_01_71",
         "location_hospitality_sunstarmotel_01_48",
         "location_hospitality_sunstarmotel_01_49",
         "location_hospitality_sunstarmotel_01_50",
@@ -237,6 +270,267 @@ end
 
 BunkersAnywhere.registerCentralMoveableSprites()
 Events.OnGameStart.Add(BunkersAnywhere.registerCentralMoveableSprites)
+
+local function getCentralPlacementSpriteForSquare(sq)
+    if not sq then return nil end
+    local objects = sq:getObjects()
+    if not objects then return nil end
+
+    local hasWallW = false
+    local hasWallN = false
+    for i = 0, objects:size() - 1 do
+        local obj = objects:get(i)
+        local props = obj and obj.getProperties and obj:getProperties() or nil
+        if props and props.Is then
+            if IsoFlagType and IsoFlagType.WallW then
+                local ok, value = pcall(function() return props:Is(IsoFlagType.WallW) end)
+                if ok and value then hasWallW = true end
+            end
+            if IsoFlagType and IsoFlagType.WallN then
+                local ok, value = pcall(function() return props:Is(IsoFlagType.WallN) end)
+                if ok and value then hasWallN = true end
+            end
+        end
+    end
+
+    if hasWallW then return BunkersAnywhere.InvisibleCentralGenerator.PlacementSpriteNameAlt or BunkersAnywhere.InvisibleCentralGenerator.SpriteNameAlt end
+    if hasWallN then return BunkersAnywhere.InvisibleCentralGenerator.PlacementSpriteName or BunkersAnywhere.InvisibleCentralGenerator.SpriteName end
+    return nil
+end
+
+local function getCentralSquareWallData(sq)
+    if not sq then
+        return false, false, false
+    end
+
+    local objects = sq:getObjects()
+    if not objects then
+        return false, false, false
+    end
+
+    local hasWallW = false
+    local hasWallN = false
+    local hasCentral = false
+    for i = 0, objects:size() - 1 do
+        local obj = objects:get(i)
+        if BunkersAnywhere.isInvisibleCentralTile(obj) then
+            hasCentral = true
+        end
+        local props = obj and obj.getProperties and obj:getProperties() or nil
+        if props and props.Is then
+            if IsoFlagType and IsoFlagType.WallW then
+                local ok, value = pcall(function() return props:Is(IsoFlagType.WallW) end)
+                if ok and value then hasWallW = true end
+            end
+            if IsoFlagType and IsoFlagType.WallN then
+                local ok, value = pcall(function() return props:Is(IsoFlagType.WallN) end)
+                if ok and value then hasWallN = true end
+            end
+        end
+    end
+
+    return hasWallW, hasWallN, hasCentral
+end
+
+local function getCentralPlacementSpriteForPlayerFacing(playerObj, sq)
+    if not playerObj or not sq then return nil, "invalid" end
+    if sq:getRoom() == nil then return nil, "invalid" end
+
+    local hasWallW, hasWallN, hasCentral = getCentralSquareWallData(sq)
+    if hasCentral then
+        return nil, "occupied"
+    end
+
+    local dir = playerObj.getDir and playerObj:getDir() or nil
+    local dirName = dir and tostring(dir) or ""
+    if dirName == "W" or dirName == "NW" or dirName == "SW" then
+        if hasWallW then
+            return BunkersAnywhere.InvisibleCentralGenerator.PlacementSpriteNameAlt or BunkersAnywhere.InvisibleCentralGenerator.SpriteNameAlt, nil
+        end
+        return nil, "wall"
+    end
+    if dirName == "N" or dirName == "NW" or dirName == "NE" then
+        if hasWallN then
+            return BunkersAnywhere.InvisibleCentralGenerator.PlacementSpriteName or BunkersAnywhere.InvisibleCentralGenerator.SpriteName, nil
+        end
+        return nil, "wall"
+    end
+    return nil, "facing"
+end
+
+local function getCentralPlacementSpriteAutomatic(sq)
+    if not sq then return nil, "invalid" end
+    if sq:getRoom() == nil then return nil, "invalid" end
+
+    local hasWallW, hasWallN, hasCentral = getCentralSquareWallData(sq)
+    if hasCentral then
+        return nil, "occupied"
+    end
+    if hasWallW then
+        return BunkersAnywhere.InvisibleCentralGenerator.PlacementSpriteNameAlt or BunkersAnywhere.InvisibleCentralGenerator.SpriteNameAlt, nil
+    end
+    if hasWallN then
+        return BunkersAnywhere.InvisibleCentralGenerator.PlacementSpriteName or BunkersAnywhere.InvisibleCentralGenerator.SpriteName, nil
+    end
+    return nil, "wall"
+end
+
+function BunkersAnywhere.canPlaceElectricCentralOnSquare(sq)
+    if not sq then return false, nil end
+    if sq:getRoom() == nil then return false, nil end
+    local spriteName = getCentralPlacementSpriteForSquare(sq)
+    if not spriteName then return false, nil end
+
+    local objects = sq:getObjects()
+    if objects then
+        for i = 0, objects:size() - 1 do
+            local obj = objects:get(i)
+            if BunkersAnywhere.isInvisibleCentralTile(obj) then
+                return false, nil
+            end
+        end
+    end
+
+    return true, spriteName
+end
+
+function BunkersAnywhere.placeElectricCentralOnSquare(item, playerObj, sq)
+    if not sq or not item then return end
+
+    local canPlace, spriteName = BunkersAnywhere.canPlaceElectricCentralOnSquare(sq)
+    local itemType = item.getType and item:getType() or nil
+    if itemType == "ElectricCentralNorth" then
+        spriteName = BunkersAnywhere.InvisibleCentralGenerator.PlacementSpriteName or spriteName
+    elseif itemType == "ElectricCentral" then
+        spriteName = BunkersAnywhere.InvisibleCentralGenerator.PlacementSpriteNameAlt or spriteName
+    end
+    if not canPlace or not spriteName then
+        playerObj:setHaloNote(baText("IGUI_Bunker_CentralInstallNeedWall"), 255, 80, 80, 380)
+        return
+    end
+
+    local objects = sq:getObjects()
+    if objects then
+        for i = 0, objects:size() - 1 do
+            local obj = objects:get(i)
+            if BunkersAnywhere.isInvisibleCentralTile(obj) then
+                playerObj:setHaloNote(baText("IGUI_Bunker_CentralAlreadyPresent"), 255, 120, 0, 320)
+                return
+            end
+        end
+    end
+
+    local obj = sq:addTileObject(spriteName)
+    if not obj then return end
+
+    local md = obj:getModData()
+    md.baInvisibleGeneratorConnected = false
+    md.baInvisibleGeneratorIsSource = false
+    md.baInvisibleGeneratorLocalOn = false
+    md.baCentralEnergyPercent = 0
+
+    if isClient() and obj.transmitCompleteItemToServer then
+        obj:transmitCompleteItemToServer()
+    end
+
+    playerObj:getInventory():Remove(item)
+    playerObj:setHaloNote(baText("IGUI_Bunker_CentralInstalled"), 0, 255, 100, 320)
+end
+
+function BunkersAnywhere.placeElectricCentral(item, playerObj)
+    local sq = playerObj and playerObj.getSquare and playerObj:getSquare() or nil
+    return BunkersAnywhere.placeElectricCentralOnSquare(item, playerObj, sq)
+end
+
+local function getCentralPlacementSpriteFromItem(item)
+    local itemType = item and item.getType and item:getType() or nil
+    if itemType == "ElectricCentral" then
+        return BunkersAnywhere.InvisibleCentralGenerator.PlacementSpriteNameAlt
+            or BunkersAnywhere.InvisibleCentralGenerator.SpriteNameAlt
+    end
+    return BunkersAnywhere.InvisibleCentralGenerator.PlacementSpriteName
+        or BunkersAnywhere.InvisibleCentralGenerator.SpriteName
+end
+
+local function getCentralForwardSquare(playerObj)
+    if not playerObj or not playerObj.getSquare then return nil end
+    return playerObj:getSquare()
+end
+
+local function forcePlaceElectricCentral(item, playerObj)
+    local sq = getCentralForwardSquare(playerObj)
+    local spriteName = getCentralPlacementSpriteFromItem(item)
+    if not sq or not item or not playerObj or not spriteName then return end
+
+    local objects = sq:getObjects()
+    if objects then
+        for i = 0, objects:size() - 1 do
+            local obj = objects:get(i)
+            if BunkersAnywhere.isInvisibleCentralTile(obj) then
+                playerObj:setHaloNote(baText("IGUI_Bunker_CentralAlreadyPresent"), 255, 120, 0, 320)
+                return
+            end
+        end
+    end
+
+    local obj = sq:addTileObject(spriteName)
+    if not obj then return end
+
+    local md = obj:getModData()
+    md.baInvisibleGeneratorConnected = false
+    md.baInvisibleGeneratorIsSource = false
+    md.baInvisibleGeneratorLocalOn = false
+    md.baCentralEnergyPercent = 0
+
+    if isClient() and obj.transmitCompleteItemToServer then
+        obj:transmitCompleteItemToServer()
+    end
+
+    playerObj:getInventory():Remove(item)
+    playerObj:setHaloNote(baText("IGUI_Bunker_CentralInstalled"), 0, 255, 100, 320)
+end
+
+function BunkersAnywhere.swapCentralMoveableOrientation(item, playerObj, targetFullType)
+    if not item or not playerObj or not targetFullType then return end
+    local inv = playerObj:getInventory()
+    if not inv then return end
+
+    local currentFullType = item.getFullType and item:getFullType() or nil
+    if currentFullType == targetFullType then return end
+
+    inv:Remove(item)
+    local newItem = inv:AddItem(targetFullType)
+    if not newItem and currentFullType then
+        inv:AddItem(currentFullType)
+        return
+    end
+end
+
+function BunkersAnywhere.onInstallElectricCentralHere(item, playerObj)
+    local sq = playerObj and playerObj.getSquare and playerObj:getSquare() or nil
+    if not sq or not item then return end
+    ISTimedActionQueue.add(ISBunkerAction:new(playerObj, sq, 140, "Loot", "LightSwitch", forcePlaceElectricCentral, item, playerObj))
+end
+
+function BunkersAnywhere.installElectricCentralFacing(item, playerObj)
+    return BunkersAnywhere.installElectricCentralAutomatic(item, playerObj)
+end
+
+function BunkersAnywhere.onInstallElectricCentralFacing(item, playerObj)
+    local sq = playerObj and playerObj.getSquare and playerObj:getSquare() or nil
+    if not sq or not item then return end
+    ISTimedActionQueue.add(ISBunkerAction:new(playerObj, sq, 140, "Loot", "LightSwitch", BunkersAnywhere.installElectricCentralFacing, item, playerObj))
+end
+
+function BunkersAnywhere.installElectricCentralAutomatic(item, playerObj)
+    return forcePlaceElectricCentral(item, playerObj)
+end
+
+function BunkersAnywhere.onInstallElectricCentralAutomatic(item, playerObj)
+    local sq = playerObj and playerObj.getSquare and playerObj:getSquare() or nil
+    if not sq or not item then return end
+    ISTimedActionQueue.add(ISBunkerAction:new(playerObj, sq, 140, "Loot", "LightSwitch", BunkersAnywhere.installElectricCentralAutomatic, item, playerObj))
+end
 
 function BunkersAnywhere.getInvisibleGeneratorStore()
     if isClient() and ModData and ModData.request then
@@ -1393,6 +1687,30 @@ local function BunkersAnywhereCentralInventoryContext(player, context, items)
     local playerObj = getSpecificPlayer(player)
     if not playerObj then return end
     local mailObj = BunkersAnywhere.findNearbyActiveMailbox(playerObj, 1)
+    local centralWestItem = nil
+    local centralNorthItem = nil
+
+    for _, itemGroup in ipairs(items) do
+        local testItem = itemGroup
+        if not instanceof(itemGroup, "InventoryItem") then
+            testItem = itemGroup.items and itemGroup.items[1] or nil
+        end
+        local fullType = testItem and testItem.getFullType and testItem:getFullType() or nil
+        if fullType == "Base.ElectricCentral" then
+            centralWestItem = testItem
+        elseif fullType == "Base.ElectricCentralNorth" then
+            centralNorthItem = testItem
+        end
+    end
+
+    if centralWestItem then
+        context:addOption(baText("ContextMenu_AutoInstallElectricCentral"), centralWestItem, BunkersAnywhere.onInstallElectricCentralAutomatic, playerObj)
+        context:addOption(baText("ContextMenu_CentralRotateNorth"), centralWestItem, BunkersAnywhere.swapCentralMoveableOrientation, playerObj, "Base.ElectricCentralNorth")
+    elseif centralNorthItem then
+        context:addOption(baText("ContextMenu_AutoInstallElectricCentral"), centralNorthItem, BunkersAnywhere.onInstallElectricCentralAutomatic, playerObj)
+        context:addOption(baText("ContextMenu_CentralRotateWest"), centralNorthItem, BunkersAnywhere.swapCentralMoveableOrientation, playerObj, "Base.ElectricCentral")
+    end
+
     if mailObj then
         context:addOption(getText("ContextMenu_DepositToShippingMailbox"), items, BunkersAnywhere.onDepositSelectedItemsToMailbox, playerObj, mailObj)
     end

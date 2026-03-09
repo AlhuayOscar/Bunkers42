@@ -806,6 +806,37 @@ local function updateCentralModData(square, on, localOn, providerText, providerC
     end
 end
 
+local function hydrateNodeStateFromCentral(square, node)
+    if not square or not node then return end
+    local hasCentral, centralObj = hasCentralOnSquare(square)
+    if not hasCentral or not centralObj or not centralObj.getModData then
+        return
+    end
+
+    local md = centralObj:getModData()
+    if not md then return end
+
+    local mdEnergy = md.baCentralEnergyPercent
+    if mdEnergy ~= nil then
+        local resolvedEnergy = clampEnergyPercent(mdEnergy)
+        if resolvedEnergy > 0 and getNodeEnergyPercent(node) <= 0 then
+            node.energy = resolvedEnergy
+        end
+    end
+
+    local mdRuntime = md.baCentralRuntimeMinutes
+    if mdRuntime ~= nil then
+        local resolvedRuntime = clampRuntimeMinutes(mdRuntime)
+        if resolvedRuntime > 0 and clampRuntimeMinutes(node.runtimeMinutes) <= 0 then
+            node.runtimeMinutes = resolvedRuntime
+        end
+    end
+
+    if node.source ~= false and getNodeEnergyPercent(node) > 0 and clampRuntimeMinutes(node.runtimeMinutes) <= 0 then
+        node.runtimeMinutes = getRuntimeMinutesFromEnergyPercent(node.energy)
+    end
+end
+
 local function getNetworkState(store)
     local effective = {}
     local providers = {}
@@ -1364,6 +1395,7 @@ local function setNodeStateAt(x, y, z, wantOn)
     local store = getStore()
     local node = store.nodes[key]
     if not node then return false end
+    hydrateNodeStateFromCentral(square, node)
     if wantOn == true and node.source ~= false and (getNodeEnergyPercent(node) <= 0 or clampRuntimeMinutes(node.runtimeMinutes) <= 0) then
         return false
     end
@@ -2099,6 +2131,36 @@ local function cleanupAndMaintain()
     end
 end
 
+local function consumeBunkerKitForPlayer(actor, args)
+    if not actor or not actor.getInventory then return end
+    local inv = actor:getInventory()
+    local targetId = tonumber(args and args.itemId or -1) or -1
+    local removed = false
+    if inv and inv.getItems then
+        local items = inv:getItems()
+        for i = items:size() - 1, 0, -1 do
+            local item = items:get(i)
+            local fullType = item and item.getFullType and item:getFullType() or nil
+            local itemType = item and item.getType and item:getType() or nil
+            local itemId = item and item.getID and item:getID() or -1
+            if (targetId > -1 and itemId == targetId) or fullType == "Base.BunkerKit" or itemType == "BunkerKit" then
+                inv:Remove(item)
+                removed = true
+                if targetId > -1 then break end
+            end
+        end
+    end
+    local primary = actor.getPrimaryHandItem and actor:getPrimaryHandItem() or nil
+    local secondary = actor.getSecondaryHandItem and actor:getSecondaryHandItem() or nil
+    if primary and primary.getFullType and primary:getFullType() == "Base.BunkerKit" and actor.setPrimaryHandItem then
+        actor:setPrimaryHandItem(nil)
+    end
+    if secondary and secondary.getFullType and secondary:getFullType() == "Base.BunkerKit" and actor.setSecondaryHandItem then
+        actor:setSecondaryHandItem(nil)
+    end
+    if actor.updateHandEquips then actor:updateHandEquips() end
+    if removed and inv and inv.setDirty then inv:setDirty(true) end
+end
 local function onClientCommand(module, command, player, args)
     if module ~= "BunkersAnywhere" then return end
     if not args then return end
@@ -2130,6 +2192,8 @@ local function onClientCommand(module, command, player, args)
         sendMailboxToCentral(tonumber(args.x), tonumber(args.y), tonumber(args.z), tonumber(args.tx), tonumber(args.ty), tonumber(args.tz))
     elseif command == "WithdrawShippingMailbox" and CFG.EnableShipping then
         withdrawMailboxAt(tonumber(args.x), tonumber(args.y), tonumber(args.z), actor)
+    elseif command == "ConsumeBunkerKit" then
+        consumeBunkerKitForPlayer(actor, args)
     end
 end
 
