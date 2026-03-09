@@ -242,6 +242,39 @@ local function isCentralSpriteFamilyName(spriteName)
     return string.match(spriteName, "^location_business_bank_01_") ~= nil
 end
 
+local function setCentralSpriteMoveableProps(spriteName)
+    if not spriteName or not getSprite then return end
+    local sprite = getSprite(spriteName)
+    if not sprite or not sprite.getProperties then return end
+
+    local props = sprite:getProperties()
+    if not props or not props.Set then return end
+
+    props:Set("IsMoveAble", "true")
+    props:Set("PickUpTool", "Crowbar")
+    props:Set("PlaceTool", "Hammer")
+    props:Set("PickUpLevel", "3")
+    props:Set("PickUpWeight", "40")
+    props:Set("CustomName", "Electric Central")
+    props:Set("GroupName", "Bunker")
+end
+
+function BunkersAnywhere.registerCentralMoveableSprites()
+    local sprites = {
+        "location_business_bank_01_64",
+        "location_business_bank_01_65",
+        "location_business_bank_01_66",
+        "location_business_bank_01_67",
+    }
+
+    for i = 1, #sprites do
+        setCentralSpriteMoveableProps(sprites[i])
+    end
+end
+
+BunkersAnywhere.registerCentralMoveableSprites()
+Events.OnGameStart.Add(BunkersAnywhere.registerCentralMoveableSprites)
+
 function BunkersAnywhere.getInvisibleGeneratorStore()
     if isClient() and ModData and ModData.request then
         local shouldRequest = false
