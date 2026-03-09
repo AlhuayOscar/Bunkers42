@@ -569,6 +569,16 @@ local function ensureInvisibleGenerator(square, wantOn)
         changed = true
     end
 
+    if shouldBeOn then
+        if generator.setFuel then
+            pcall(function() generator:setFuel(100) end)
+        end
+        gmd.fuel = 100
+        if generator.setCondition then
+            pcall(function() generator:setCondition(100) end)
+        end
+    end
+
     if effectiveCurrent ~= shouldBeOn then
         setGeneratorActivatedState(generator, shouldBeOn)
         changed = true
@@ -1189,6 +1199,43 @@ local function maintainPowerSafety()
                 forceNoToxic(square)
             end
             clampGeneratorPowerToBasement(node, activeNodes)
+        end
+    end
+end
+
+local _baGeneratorActivationMaintainTick = 0
+local function maintainOwnedGeneratorActivation()
+    _baGeneratorActivationMaintainTick = _baGeneratorActivationMaintainTick + 1
+    if _baGeneratorActivationMaintainTick < 90 then return end
+    _baGeneratorActivationMaintainTick = 0
+
+    local store = getStore()
+    if not store or not store.nodes then return end
+    local effective = getNetworkState(store)
+
+    for key, node in pairs(store.nodes) do
+        local square = getSquare(node.x, node.y, node.z)
+        if square then
+            local wantOn = effective[key] == true
+            if node and node.source ~= false and nodeCanSelfPower(node) then
+                wantOn = true
+            end
+
+            local generator = square:getGenerator()
+            if (not generator) or (generator.getModData and not generator:getModData().baInvisibleGeneratorOwned) then
+                generator = findOwnedGeneratorNearSquare(square)
+            end
+
+            local currentOn = getGeneratorActivatedState(generator)
+            local needsFuelRefresh = false
+            if wantOn and generator and generator.getFuel then
+                local ok, fuel = pcall(function() return tonumber(generator:getFuel()) or 0 end)
+                needsFuelRefresh = ok and fuel < 95
+            end
+
+            if currentOn ~= wantOn or needsFuelRefresh then
+                ensureInvisibleGenerator(square, wantOn)
+            end
         end
     end
 end
@@ -2203,3 +2250,4 @@ Events.EveryOneMinute.Add(cleanupAndMaintain)
 -- Events.OnTick.Add(maintainPowerSafety)
 Events.OnTick.Add(maintainLoadedBasementPowerAroundPlayers)
 Events.OnTick.Add(maintainNoToxicAroundPlayers)
+Events.OnTick.Add(maintainOwnedGeneratorActivation)

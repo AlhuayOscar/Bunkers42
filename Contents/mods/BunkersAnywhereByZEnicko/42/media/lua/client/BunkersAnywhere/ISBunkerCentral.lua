@@ -196,7 +196,7 @@ local function baText(key, ...)
 end
 BunkersAnywhere.getCentralUIText = baText
 local function baCanTransmitGlobalModData()
-    return not (isClient and isClient())
+    return isServer and isServer() or false
 end
 
 function BunkersAnywhere.isInvisibleCentralSpriteName(spriteName)
@@ -965,8 +965,6 @@ end
 
 function BunkersAnywhere.forceHideGeneratorVisual(obj)
     if not obj then return false end
-    -- MP clients may re-render replicated generators with default sprite.
-    -- Force-hide repeatedly on client to keep it fully invisible.
     if obj.setAlpha then
         pcall(function() obj:setAlpha(0.0) end)
     end

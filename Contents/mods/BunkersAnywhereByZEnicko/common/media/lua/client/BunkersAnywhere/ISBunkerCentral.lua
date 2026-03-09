@@ -247,7 +247,7 @@ BunkersAnywhere.getCentralUIText = baText
 function BunkersAnywhere.isInvisibleCentralSpriteName(spriteName)
     if not spriteName then return false end
 local function baCanTransmitGlobalModData()
-    return not (isClient and isClient())
+    return isServer and isServer() or false
 end
     if spriteName == BunkersAnywhere.InvisibleCentralGenerator.SpriteName then return true end
     if spriteName == BunkersAnywhere.InvisibleCentralGenerator.SpriteNameAlt then return true end
