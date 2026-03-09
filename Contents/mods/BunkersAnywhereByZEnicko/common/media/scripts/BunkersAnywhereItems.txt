@@ -26,4 +26,13 @@ module Base
         DisplayCategory = Household,
         Weight = 20,
     }
+
+    item ElectricCentral
+    {
+        ItemType = base:normal,
+        DisplayName = Electric Central,
+        Icon = Central,
+        DisplayCategory = Household,
+        Weight = 40,
+    }
 }

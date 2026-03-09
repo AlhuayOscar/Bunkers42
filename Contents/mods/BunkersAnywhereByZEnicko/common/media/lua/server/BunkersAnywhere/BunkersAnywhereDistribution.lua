@@ -14,13 +14,17 @@ local function InjectBunkerKitSpawns()
     }
 
     local kitItem = "Base.BunkerKit"
-    local spawnChance = 5 -- 5% chance
+    local centralItem = "Base.ElectricCentral"
+    local kitSpawnChance = 10
+    local centralSpawnChance = 5
 
     for _, distName in ipairs(targetDistributions) do
         local distTable = ProceduralDistributions.list[distName]
         if distTable and distTable.items then
             table.insert(distTable.items, kitItem)
-            table.insert(distTable.items, spawnChance)
+            table.insert(distTable.items, kitSpawnChance)
+            table.insert(distTable.items, centralItem)
+            table.insert(distTable.items, centralSpawnChance)
         end
     end
 end
