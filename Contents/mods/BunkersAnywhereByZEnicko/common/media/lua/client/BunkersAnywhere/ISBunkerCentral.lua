@@ -461,6 +461,7 @@ function BunkersAnywhere.placeElectricCentralOnSquare(item, playerObj, sq)
     if not obj then return end
 
     local md = obj:getModData()
+    md.baIsElectricCentral = true
     md.baInvisibleGeneratorConnected = false
     md.baInvisibleGeneratorIsSource = false
     md.baInvisibleGeneratorLocalOn = false
@@ -514,6 +515,7 @@ local function forcePlaceElectricCentral(item, playerObj)
     if not obj then return end
 
     local md = obj:getModData()
+    md.baIsElectricCentral = true
     md.baInvisibleGeneratorConnected = false
     md.baInvisibleGeneratorIsSource = false
     md.baInvisibleGeneratorLocalOn = false
