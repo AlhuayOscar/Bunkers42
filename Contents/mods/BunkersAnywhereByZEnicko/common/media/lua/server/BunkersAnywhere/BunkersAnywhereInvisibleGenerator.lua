@@ -5,7 +5,7 @@ local CFG = {
     SpriteName = "location_business_bank_01_67",
     SpriteNameAlt = "location_business_bank_01_66",
     ZLevel = -1,
-    GeneratorRadius = 100,
+    GeneratorRadius = 200,
     VanillaGeneratorRadius = 20,
     DebugRadiusLogs = true,
     GeneratorRadiusUpgradeBonus = 2000,
@@ -38,10 +38,15 @@ local CFG = {
         ["Base.CarBattery3"] = 10080,
     },
     MinElectricityToConnect = 3,
+    UseCustomPoweredSquares = true,
+    RelayMeshTickInterval = 180,
+    RelayMeshSpacing = 28,
+    HiddenGeneratorMaxDrop = 24,
+    HiddenGeneratorExtraDepth = 3,
 }
 
 local function useHiddenGeneratorPower()
-    return true
+    return CFG.UseCustomPoweredSquares ~= true
 end
 
 local function isCentralSpriteName(spriteName)
@@ -70,6 +75,33 @@ end
 local function transmitStore()
     if ModData.transmit then
         ModData.transmit(CFG.DataKey)
+    end
+end
+
+local function broadcastOwnedGeneratorRefresh()
+    if not sendServerCommand then return end
+
+    if getOnlinePlayers then
+        local players = getOnlinePlayers()
+        if players and players.size and players.get then
+            for i = 0, players:size() - 1 do
+                local player = players:get(i)
+                if player then
+                    sendServerCommand(player, "BunkersAnywhere", "RefreshInvisibleGenerators", {})
+                end
+            end
+            return
+        end
+    end
+
+    if getNumActivePlayers and getSpecificPlayer then
+        local num = tonumber(getNumActivePlayers()) or 0
+        for i = 0, num - 1 do
+            local player = getSpecificPlayer(i)
+            if player then
+                sendServerCommand(player, "BunkersAnywhere", "RefreshInvisibleGenerators", {})
+            end
+        end
     end
 end
 
@@ -472,43 +504,216 @@ local function hasMailboxOnSquare(square)
     return false, nil
 end
 
+local function sameSquareCoords(a, b)
+    if not a or not b then return false end
+    return a:getX() == b:getX() and a:getY() == b:getY() and a:getZ() == b:getZ()
+end
+
+local function isMatchingOwnedGenerator(generator, square, ownerKey)
+    if not generator or not square or not generator.getModData then return false end
+    local md = generator:getModData()
+    if not md or md.baInvisibleGeneratorOwned ~= true then
+        return false
+    end
+    if ownerKey == nil then
+        return true
+    end
+
+    local storedOwnerKey = md.baInvisibleGeneratorOwnerKey
+    if storedOwnerKey ~= nil then
+        return tostring(storedOwnerKey) == tostring(ownerKey)
+    end
+
+    return getNodeKey(square:getX(), square:getY(), square:getZ()) == tostring(ownerKey)
+end
+
+local function getOwnedGeneratorFromSquare(square, ownerKey)
+    if not square then return nil, nil end
+    local generator = square:getGenerator()
+    if isMatchingOwnedGenerator(generator, square, ownerKey) then
+        return generator, square
+    end
+    return nil, nil
+end
+
+local function squareHasStructuralTiles(square)
+    if not square then return false end
+    if square.getRoom and square:getRoom() ~= nil then
+        return true
+    end
+    if square.getFloor and square:getFloor() ~= nil then
+        return true
+    end
+
+    local objects = square:getObjects()
+    if not objects or not objects.size then
+        return false
+    end
+
+    for i = 0, objects:size() - 1 do
+        local obj = objects:get(i)
+        if obj then
+            local sprite = obj.getSprite and obj:getSprite() or nil
+            local spriteName = sprite and sprite.getName and sprite:getName() or nil
+            if spriteName and spriteName ~= "" then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local function hasStructuralTilesNearby(x, y, z, radius)
+    local cell = getCell()
+    if not cell then return false end
+    local r = math.max(0, math.floor(tonumber(radius) or 0))
+    for dx = -r, r do
+        for dy = -r, r do
+            local sq = cell:getGridSquare(x + dx, y + dy, z)
+            if squareHasStructuralTiles(sq) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function getOrCreateHiddenGeneratorSquare(x, y, z)
+    local cell = getCell()
+    if not cell then return nil end
+
+    local square = cell:getGridSquare(x, y, z)
+    if square then
+        return square
+    end
+
+    if cell.getOrCreateGridSquare then
+        local ok, created = pcall(function()
+            return cell:getOrCreateGridSquare(x, y, z)
+        end)
+        if ok and created then
+            return created
+        end
+    end
+
+    if cell.createNewGridSquare then
+        local ok, created = pcall(function()
+            return cell:createNewGridSquare(x, y, z, false)
+        end)
+        if ok and created then
+            return created
+        end
+    end
+
+    return nil
+end
+
+local function getOwnedGeneratorDropDepth(role)
+    local configuredMaxDrop = math.max(6, math.floor(tonumber(CFG.HiddenGeneratorMaxDrop) or 24))
+    if tostring(role or "") == "relay_mesh" then
+        return configuredMaxDrop
+    end
+    if useHiddenGeneratorPower() then
+        return math.max(0, math.floor(tonumber(CFG.GeneratorVertical) or 0))
+    end
+    return configuredMaxDrop
+end
+
+local function findDeepestStructuralZNearSquare(square, maxDrop)
+    if not square then return nil end
+    local sx, sy, sz = square:getX(), square:getY(), square:getZ()
+    local deepestZ = nil
+    for dz = 0, maxDrop do
+        local targetZ = sz - dz
+        if hasStructuralTilesNearby(sx, sy, targetZ, 1) then
+            deepestZ = targetZ
+        end
+    end
+    return deepestZ
+end
+
+local function resolveOwnedGeneratorPlacementSquare(square, role)
+    if not square then return nil end
+    local cell = getCell()
+    if not cell then return square end
+
+    local sx, sy, sz = square:getX(), square:getY(), square:getZ()
+    local maxDrop = getOwnedGeneratorDropDepth(role)
+    local extraDepth = math.max(1, math.floor(tonumber(CFG.HiddenGeneratorExtraDepth) or 3))
+    local deepestStructureZ = findDeepestStructuralZNearSquare(square, maxDrop)
+    local preferredDrop = extraDepth
+    if deepestStructureZ ~= nil then
+        preferredDrop = math.max(extraDepth, sz - deepestStructureZ + extraDepth)
+    end
+    preferredDrop = math.min(maxDrop, preferredDrop)
+    local deepestFallback = nil
+
+    for dz = preferredDrop, maxDrop do
+        local targetZ = sz - dz
+        for radius = 0, 1 do
+            for dx = -radius, radius do
+                for dy = -radius, radius do
+                    local candidate = getOrCreateHiddenGeneratorSquare(sx + dx, sy + dy, targetZ)
+                    if candidate and (not candidate.getRoom or candidate:getRoom() == nil) then
+                        deepestFallback = candidate
+                        if not hasStructuralTilesNearby(candidate:getX(), candidate:getY(), candidate:getZ(), 1) then
+                            return candidate
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    for dz = 1, preferredDrop - 1 do
+        local targetZ = sz - dz
+        for radius = 0, 1 do
+            for dx = -radius, radius do
+                for dy = -radius, radius do
+                    local candidate = getOrCreateHiddenGeneratorSquare(sx + dx, sy + dy, targetZ)
+                    if candidate and (not candidate.getRoom or candidate:getRoom() == nil) then
+                        deepestFallback = candidate
+                        if not hasStructuralTilesNearby(candidate:getX(), candidate:getY(), candidate:getZ(), 1) then
+                            return candidate
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if deepestFallback then
+        return deepestFallback
+    end
+
+    if tostring(role or "") == "relay_mesh" and sz > -32 then
+        return getOrCreateHiddenGeneratorSquare(sx, sy, sz - 1) or square
+    end
+
+    return square
+end
+
 local function findOwnedGeneratorNearSquare(square, ownerKey)
     if not square then return nil, nil end
     local cell = getCell()
     if not cell then return nil, nil end
 
     local sx, sy, sz = square:getX(), square:getY(), square:getZ()
-    for dx = -1, 1 do
-        for dy = -1, 1 do
-            local sq = nil
-            if dx == 0 and dy == 0 then
-                sq = square
-            else
-                sq = cell:getGridSquare(sx + dx, sy + dy, sz)
-            end
-            if sq then
-                local g = sq:getGenerator()
-                if g and g.getModData then
-                    local md = g:getModData()
-                    if md and md.baInvisibleGeneratorOwned then
-                        if ownerKey ~= nil then
-                            local storedOwnerKey = md.baInvisibleGeneratorOwnerKey
-                            local matchesOwner = false
-                            if storedOwnerKey ~= nil then
-                                matchesOwner = tostring(storedOwnerKey) == tostring(ownerKey)
-                            else
-                                matchesOwner = getNodeKey(sq:getX(), sq:getY(), sq:getZ()) == tostring(ownerKey)
-                            end
-                            if not matchesOwner then
-                                g = nil
-                            end
-                        end
-                    else
-                        g = nil
-                    end
-                    if g then
-                        return g, sq
-                    end
+    local maxDepth = math.max(6, getOwnedGeneratorDropDepth(nil), math.floor(tonumber(CFG.HiddenGeneratorMaxDrop) or 24))
+    for dz = 0, maxDepth do
+        local targetZ = sz - dz
+        for dx = -1, 1 do
+            for dy = -1, 1 do
+                local sq = nil
+                if dz == 0 and dx == 0 and dy == 0 then
+                    sq = square
+                else
+                    sq = cell:getGridSquare(sx + dx, sy + dy, targetZ)
+                end
+                local generator, generatorSquare = getOwnedGeneratorFromSquare(sq, ownerKey)
+                if generator then
+                    return generator, generatorSquare
                 end
             end
         end
@@ -532,6 +737,8 @@ end
 
 local logCentralDebug
 local forceNoToxic
+local syncNodeRelayMeshes
+local ensureInvisibleGenerator
 
 local function setGeneratorActivatedState(generator, on)
     if not generator then return nil end
@@ -570,9 +777,8 @@ local function setGeneratorActivatedState(generator, on)
     return applied
 end
 
-local function removeOwnedGenerator(square)
-    if not square then return end
-    local ownerKey = getNodeKey(square:getX(), square:getY(), square:getZ())
+local function removeOwnedGeneratorByOwner(square, ownerKey)
+    if not square or not ownerKey then return end
     local generator = square:getGenerator()
     local targetSquare = square
     if generator and generator.getModData then
@@ -601,11 +807,23 @@ local function removeOwnedGenerator(square)
     end
 end
 
+local function removeOwnedGenerator(square)
+    if not square then return end
+    removeOwnedGeneratorByOwner(square, getNodeKey(square:getX(), square:getY(), square:getZ()))
+end
+
 local function normalizeBool(value)
     if value == true then return true end
     if value == 1 or value == "1" then return true end
     if value == "true" then return true end
     return false
+end
+
+local function getOwnedGeneratorItemTypeForRole(role)
+    if tostring(role or "") == "relay_mesh" then
+        return "BunkersAnywhere.RelayGenerator"
+    end
+    return "Base.Generator"
 end
 
 local function getWorldMinuteStamp()
@@ -644,12 +862,13 @@ logCentralDebug = function(tag, key, node, extra)
     print(table.concat(parts, " "))
 end
 
-local function ensureInvisibleGenerator(square, wantOn)
-    if not square then return end
-    local ownerKey = getNodeKey(square:getX(), square:getY(), square:getZ())
+local function ensureOwnedGenerator(square, ownerKey, wantOn, role)
+    if not square or not ownerKey then return end
     local desiredPower = wantOn == true
+    local desiredItemType = getOwnedGeneratorItemTypeForRole(role)
+    local targetSquare = resolveOwnedGeneratorPlacementSquare(square, role) or square
 
-    local generator = square:getGenerator()
+    local generator, generatorSquare = getOwnedGeneratorFromSquare(square, ownerKey)
     local created = false
     if generator and generator.getModData then
         local gmd = generator:getModData()
@@ -657,13 +876,35 @@ local function ensureInvisibleGenerator(square, wantOn)
             and (gmd.baInvisibleGeneratorOwnerKey == nil or tostring(gmd.baInvisibleGeneratorOwnerKey) == tostring(ownerKey))
         if not matchesOwner then
             generator = nil
+            generatorSquare = nil
         end
-    else
-        generator = nil
     end
 
     if not generator then
-        generator = findOwnedGeneratorNearSquare(square, ownerKey)
+        generator, generatorSquare = findOwnedGeneratorNearSquare(square, ownerKey)
+    end
+
+    if generator and generatorSquare and targetSquare and not sameSquareCoords(generatorSquare, targetSquare) then
+        logCentralDebug(
+            "relay_generator_relocate",
+            ownerKey,
+            nil,
+            "from=" .. tostring(generatorSquare:getX()) .. "," .. tostring(generatorSquare:getY()) .. "," .. tostring(generatorSquare:getZ())
+            .. " to=" .. tostring(targetSquare:getX()) .. "," .. tostring(targetSquare:getY()) .. "," .. tostring(targetSquare:getZ())
+        )
+        removeOwnedGeneratorByOwner(square, ownerKey)
+        generator = nil
+        generatorSquare = nil
+    end
+
+    if generator and generator.getModData then
+        local gmd = generator:getModData()
+        local currentItemType = tostring(gmd and gmd.generatorFullType or "Base.Generator")
+        if currentItemType ~= tostring(desiredItemType) then
+            logCentralDebug("relay_generator_migrate", ownerKey, nil, "from=" .. currentItemType .. " to=" .. tostring(desiredItemType))
+            removeOwnedGeneratorByOwner(square, ownerKey)
+            generator = nil
+        end
     end
 
     if (not generator) and (not desiredPower) then
@@ -671,12 +912,25 @@ local function ensureInvisibleGenerator(square, wantOn)
     end
 
     if not generator then
-        local item = instanceItem("Base.Generator")
+        local item = instanceItem(desiredItemType)
+        if not item and desiredItemType ~= "Base.Generator" then
+            desiredItemType = "Base.Generator"
+            item = instanceItem(desiredItemType)
+        end
         if not item then return end
         item:setCondition(100)
         item:getModData().fuel = 100
-        generator = IsoGenerator.new(item, getCell(), square)
+        generator = IsoGenerator.new(item, getCell(), targetSquare)
         created = generator ~= nil
+        if created then
+            logCentralDebug(
+                "relay_generator_created",
+                ownerKey,
+                nil,
+                "item=" .. tostring(desiredItemType)
+                .. " pos=" .. tostring(targetSquare:getX()) .. "," .. tostring(targetSquare:getY()) .. "," .. tostring(targetSquare:getZ())
+            )
+        end
     end
     if not generator then return end
 
@@ -689,6 +943,10 @@ local function ensureInvisibleGenerator(square, wantOn)
     end
     if tostring(gmd.baInvisibleGeneratorOwnerKey or "") ~= tostring(ownerKey) then
         gmd.baInvisibleGeneratorOwnerKey = ownerKey
+        changed = true
+    end
+    if tostring(gmd.baInvisibleGeneratorRole or "") ~= tostring(role or "central") then
+        gmd.baInvisibleGeneratorRole = tostring(role or "central")
         changed = true
     end
 
@@ -823,9 +1081,8 @@ local function clampGeneratorPowerToBasement(node, activeNodes)
     return changedAny
 end
 
--- Vanilla generator only powers its own base radius (~20 tiles). Apply
--- manual grid power for the full target radius. This avoids relying on the
--- hidden vanilla generator, which can still apply toxic fumes indoors.
+-- Custom powered squares backend for the central. This is the real radius
+-- path for the mod and should stay independent from the hidden generator.
 local function applyExtendedBasementPowerForNode(node, activeNodes)
     if not node then return false end
     local cell = getCell()
@@ -1175,6 +1432,8 @@ local function applyNetworkPower(store)
             clampGeneratorPowerToBasement(node, activeNodes)
         end
     end
+    syncNodeRelayMeshes(store, effective)
+    broadcastOwnedGeneratorRefresh()
     return effective, providers
 end
 
@@ -1216,6 +1475,11 @@ local function syncOwnedGeneratorActivationFromState(store, effective)
     end
 end
 
+ensureInvisibleGenerator = function(square, wantOn)
+    if not square then return end
+    ensureOwnedGenerator(square, getNodeKey(square:getX(), square:getY(), square:getZ()), wantOn, "central")
+end
+
 local function collectActivePowerNodes(store, effective)
     local nodes = {}
     if not store or not store.nodes then return nodes end
@@ -1224,6 +1488,7 @@ local function collectActivePowerNodes(store, effective)
             local r = getNodePowerRadius(node)
             if r > 0 then
                 table.insert(nodes, {
+                    key = key,
                     x = node.x,
                     y = node.y,
                     z = node.z,
@@ -1233,6 +1498,113 @@ local function collectActivePowerNodes(store, effective)
         end
     end
     return nodes
+end
+
+local forEachOnlinePlayerSafe
+
+local function getRelayMeshOwnerKey(nodeKey, anchorX, anchorY)
+    return "mesh:" .. tostring(nodeKey) .. ":" .. tostring(anchorX) .. ":" .. tostring(anchorY)
+end
+
+local function isLegacyPlayerRelayOwnerKey(ownerKey)
+    return ownerKey ~= nil and string.sub(tostring(ownerKey), 1, 6) == "relay:"
+end
+
+local function findBestRelaySquareAt(anchorX, anchorY)
+    local cell = getCell()
+    if not cell then return nil end
+
+    local surface = cell:getGridSquare(anchorX, anchorY, 0)
+    if surface and (not surface.getRoom or surface:getRoom() == nil) then
+        return surface
+    end
+
+    for radius = 1, 2 do
+        for dx = -radius, radius do
+            for dy = -radius, radius do
+                local probe = cell:getGridSquare(anchorX + dx, anchorY + dy, 0)
+                if probe and (not probe.getRoom or probe:getRoom() == nil) then
+                    return probe
+                end
+            end
+        end
+    end
+
+    return surface
+end
+
+local function forEachRelayMeshAnchor(node, fn)
+    if not node or not fn then return end
+    local spacing = math.max(8, math.floor(tonumber(CFG.RelayMeshSpacing) or 28))
+    local r = math.max(1, getNodePowerRadius(node))
+    local row = 0
+    for ay = node.y - r, node.y + r, spacing do
+        local offset = (row % 2 == 1) and math.floor(spacing / 2) or 0
+        for ax = node.x - r, node.x + r, spacing do
+            local rx = ax + offset
+            local dx = rx - node.x
+            local dy = ay - node.y
+            if (dx * dx + dy * dy) <= (r * r) then
+                fn(rx, ay)
+            end
+        end
+        row = row + 1
+    end
+end
+
+local _baRelayMeshStateByOwner = {}
+syncNodeRelayMeshes = function(store, effective)
+    if CFG.UseCustomPoweredSquares ~= true then return end
+    if not store or not store.nodes then return end
+
+    local activeNodes = collectActivePowerNodes(store, effective)
+    local expectedOwners = {}
+
+    for i = 1, #activeNodes do
+        local activeNode = activeNodes[i]
+        local sourceNode = store.nodes[activeNode.key] or activeNode
+        forEachRelayMeshAnchor(sourceNode, function(anchorX, anchorY)
+            local ownerKey = getRelayMeshOwnerKey(activeNode.key, anchorX, anchorY)
+            expectedOwners[ownerKey] = true
+
+            local relaySquare = findBestRelaySquareAt(anchorX, anchorY)
+            if not relaySquare then return end
+
+            local previous = _baRelayMeshStateByOwner[ownerKey]
+            if previous and (previous.x ~= relaySquare:getX() or previous.y ~= relaySquare:getY() or previous.z ~= relaySquare:getZ()) then
+                local oldSquare = getSquare(previous.x, previous.y, previous.z)
+                if oldSquare then
+                    removeOwnedGeneratorByOwner(oldSquare, ownerKey)
+                end
+                logCentralDebug("mesh_relay_move", ownerKey, nil, "from=" .. tostring(previous.x) .. "," .. tostring(previous.y) .. "," .. tostring(previous.z)
+                .. " to=" .. tostring(relaySquare:getX()) .. "," .. tostring(relaySquare:getY()) .. "," .. tostring(relaySquare:getZ()))
+            end
+
+            ensureOwnedGenerator(relaySquare, ownerKey, true, "relay_mesh")
+            if (not previous) or previous.x ~= relaySquare:getX() or previous.y ~= relaySquare:getY() or previous.z ~= relaySquare:getZ() then
+                logCentralDebug("mesh_relay_apply", ownerKey, nil, "centralKey=" .. tostring(activeNode.key)
+                .. " pos=" .. tostring(relaySquare:getX()) .. "," .. tostring(relaySquare:getY()) .. "," .. tostring(relaySquare:getZ()))
+            end
+
+            _baRelayMeshStateByOwner[ownerKey] = {
+                x = relaySquare:getX(),
+                y = relaySquare:getY(),
+                z = relaySquare:getZ(),
+                centralKey = activeNode.key,
+            }
+        end)
+    end
+
+    for ownerKey, relay in pairs(_baRelayMeshStateByOwner) do
+        if not expectedOwners[ownerKey] then
+            local oldSquare = getSquare(relay.x, relay.y, relay.z)
+            if oldSquare then
+                removeOwnedGeneratorByOwner(oldSquare, ownerKey)
+            end
+            logCentralDebug("mesh_relay_removed", ownerKey, nil, "pos=" .. tostring(relay.x) .. "," .. tostring(relay.y) .. "," .. tostring(relay.z))
+            _baRelayMeshStateByOwner[ownerKey] = nil
+        end
+    end
 end
 
 local function isSquarePoweredByActiveNode(x, y, z, activeNodes)
@@ -1250,7 +1622,7 @@ local function isSquarePoweredByActiveNode(x, y, z, activeNodes)
     return false
 end
 
-local function forEachOnlinePlayerSafe(fn)
+forEachOnlinePlayerSafe = function(fn)
     if not fn then return end
     if getOnlinePlayers then
         local players = getOnlinePlayers()
@@ -1271,8 +1643,8 @@ local function forEachOnlinePlayerSafe(fn)
     end
 end
 
--- Keep loaded chunks around players synchronized with central power
--- radius (including upgraded tiers), even when central chunks are unloaded.
+-- Keep loaded chunks around players synchronized with custom powered squares,
+-- even when the central chunk itself is unloaded.
 local _baLoadedBasementPowerTick = 0
 local function maintainLoadedBasementPowerAroundPlayers()
     _baLoadedBasementPowerTick = _baLoadedBasementPowerTick + 1
@@ -1320,12 +1692,14 @@ local function maintainLoadedBasementPowerAroundPlayers()
 
         for x = px - range, px + range do
             for y = py - range, py + range do
-                local gs = cell:getGridSquare(x, y, pz)
-                if gs then
-                    local shouldOn = isSquarePoweredByActiveNode(x, y, pz, nodesNearPlayerZ)
-                    setSquarePower(gs, shouldOn)
-                    if shouldOn then
-                        forceNoToxic(gs)
+                for z = pz - vertical, pz + vertical do
+                    local gs = cell:getGridSquare(x, y, z)
+                    if gs then
+                        local shouldOn = isSquarePoweredByActiveNode(x, y, z, nodesNearPlayerZ)
+                        setSquarePower(gs, shouldOn)
+                        if shouldOn then
+                            forceNoToxic(gs)
+                        end
                     end
                 end
             end
@@ -1350,7 +1724,7 @@ local function maintainPowerSafety()
             if node and node.source ~= false and nodeCanSelfPower(node) then
                 wantOn = true
             end
-            ensureInvisibleGenerator(square, wantOn)
+            ensureInvisibleGenerator(square, useHiddenGeneratorPower() and wantOn or false)
             if wantOn then
                 forceNoToxic(square)
             end
@@ -1856,6 +2230,7 @@ local function insertCentralBatteryAt(x, y, z, player, fullType, args)
             local effectiveNow = getNetworkState(store)
             local activeNodes = collectWantedPowerNodes(store, effectiveNow)
             ensureInvisibleGenerator(square, useHiddenGeneratorPower())
+            applyExtendedBasementPowerForNode(node, activeNodes)
             forceNoToxic(square)
             clampGeneratorPowerToBasement(node, activeNodes)
             local g = square:getGenerator()
@@ -2469,7 +2844,7 @@ Events.OnClientCommand.Add(onClientCommand)
 Events.EveryOneMinute.Add(cleanupAndMaintain)
 -- Disabled to avoid rapid ON/OFF oscillation in MP.
 -- Events.OnTick.Add(maintainPowerSafety)
--- Legacy stable mode: no continuous OnTick maintenance.
--- Events.OnTick.Add(maintainLoadedBasementPowerAroundPlayers)
--- Events.OnTick.Add(maintainNoToxicAroundPlayers)
+-- Custom powered squares mode needs continuous upkeep around loaded players.
+Events.OnTick.Add(maintainLoadedBasementPowerAroundPlayers)
+Events.OnTick.Add(maintainNoToxicAroundPlayers)
 -- Events.OnTick.Add(maintainOwnedGeneratorActivation)

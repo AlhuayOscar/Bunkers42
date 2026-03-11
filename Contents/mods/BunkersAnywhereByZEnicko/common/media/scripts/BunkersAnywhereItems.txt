@@ -47,3 +47,19 @@ module Base
         Weight = 40,
     }
 }
+
+module BunkersAnywhere
+{
+    item RelayGenerator
+    {
+        ItemType = base:normal,
+        DisplayName = Relay Generator,
+        Icon = Generator,
+        DisplayCategory = Electronics,
+        Weight = 40,
+        WorldObjectSprite = ba_relay_generator_0,
+        SoundRadius = 1,
+        SoundVolume = 1,
+        Tags = Generator;HeavyItem,
+    }
+}

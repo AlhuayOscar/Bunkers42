@@ -8,7 +8,7 @@ BunkersAnywhere.InvisibleCentralGenerator = {
     PlacementSpriteName = "location_business_bank_01_67",
     PlacementSpriteNameAlt = "location_business_bank_01_66",
     ZLevel = -1,
-    BaseRadius = 100,
+    BaseRadius = 200,
     RadiusUpgradeBonus = 2000,
     RadiusUpgradeWireCost = 50,
     RadiusUpgradeBonuses = { 25, 50, 100, 200, 500, 1000, 2000 },
@@ -965,6 +965,12 @@ function BunkersAnywhere.isOwnedInvisibleGenerator(obj)
     return md and md.baInvisibleGeneratorOwned == true
 end
 
+function BunkersAnywhere.isRelayMeshInvisibleGenerator(obj)
+    if not BunkersAnywhere.isOwnedInvisibleGenerator(obj) then return false end
+    local md = obj:getModData()
+    return md and tostring(md.baInvisibleGeneratorRole or "") == "relay_mesh"
+end
+
 function BunkersAnywhere.forceHideGeneratorVisual(obj)
     if not obj then return false end
     if obj.setAlpha then
@@ -1054,6 +1060,7 @@ function BunkersAnywhere.refreshOwnedInvisibleGenerators()
             BunkersAnywhere.hideGeneratorNearCentralNode(node)
         end
     end
+
 end
 
 function BunkersAnywhere.getWireDistanceCost(fromSq, toX, toY)
@@ -2192,18 +2199,10 @@ local function BunkersAnywhereOnServerCommand(module, command, args)
     if module ~= "BunkersAnywhere" then return end
     if command == "CentralBatteryPayout" then
         BunkersAnywhere.onServerCentralBatteryPayout(args or {})
+    elseif command == "RefreshInvisibleGenerators" then
+        BunkersAnywhere.refreshOwnedInvisibleGenerators()
     end
 end
 
 Events.OnServerCommand.Add(BunkersAnywhereOnServerCommand)
-
-local _baGeneratorHideTick = 0
-local function BunkersAnywhereOnTickHideOwnedGenerators()
-    _baGeneratorHideTick = _baGeneratorHideTick + 1
-    if _baGeneratorHideTick < 3 then return end
-    _baGeneratorHideTick = 0
-    BunkersAnywhere.refreshOwnedInvisibleGenerators()
-end
-
-Events.OnTick.Add(BunkersAnywhereOnTickHideOwnedGenerators)
 Events.OnGameStart.Add(BunkersAnywhere.refreshOwnedInvisibleGenerators)
