@@ -13,7 +13,7 @@ BunkersAnywhere.InvisibleCentralGenerator = {
     RadiusUpgradeWireCost = 50,
     RadiusUpgradeBonuses = { 25, 50, 100, 200, 500, 1000, 2000 },
     RadiusUpgradeWireCosts = { 50, 50, 50, 50, 50, 50, 200 },
-    RadiusUpgradeEnabled = false,
+    RadiusUpgradeEnabled = true,
 }
 
 BunkersAnywhere.ShippingMailbox = {
@@ -64,6 +64,8 @@ local BA_LOCAL_TEXT = {
         ContextMenu_CentralEnergy = "Central energy: %1%%",
         ContextMenu_CentralTimeRemaining = "Time remaining: %1",
         ContextMenu_CentralRadius = "Central radius: %1 tiles",
+        ContextMenu_CentralUpgrade = "Upgrade central (+%1 tiles, %2 wire)",
+        ContextMenu_CentralUpgradeMax = "Central upgrade at maximum",
         ContextMenu_CentralUpgradeDisabled = "Upgrade central (temporarily disabled)",
         ContextMenu_CentralAutoLoadBattery = "Load battery automatically",
         ContextMenu_CentralLoadWithBattery = "Load central with battery",
@@ -108,6 +110,8 @@ local BA_LOCAL_TEXT = {
         ContextMenu_CentralEnergy = "Energia central: %1%%",
         ContextMenu_CentralTimeRemaining = "Tiempo restante: %1",
         ContextMenu_CentralRadius = "Radio central: %1 tiles",
+        ContextMenu_CentralUpgrade = "Ampliar central (+%1 tiles, %2 cable)",
+        ContextMenu_CentralUpgradeMax = "Ampliacion de central al maximo",
         ContextMenu_CentralUpgradeDisabled = "Ampliar central (temporalmente deshabilitado)",
         ContextMenu_CentralAutoLoadBattery = "Cargar bateria automaticamente",
         ContextMenu_CentralLoadWithBattery = "Cargar central con bateria",
@@ -1886,8 +1890,34 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
             local radiusInfo = context:addOption(baText("ContextMenu_CentralRadius", tostring(radiusValue)))
             radiusInfo.notAvailable = true
 
-            local upgradeDisabled = context:addOption(baText("ContextMenu_CentralUpgradeDisabled"))
-            upgradeDisabled.notAvailable = true
+            if BunkersAnywhere.InvisibleCentralGenerator.RadiusUpgradeEnabled == true then
+                local nextBonus, need = BunkersAnywhere.getNextCentralRadiusUpgrade(radiusBonus)
+                if nextBonus then
+                    local upgradeOpt = context:addOption(
+                        baText("ContextMenu_CentralUpgrade", tostring(nextBonus), tostring(need)),
+                        centralObj,
+                        BunkersAnywhere.onUpgradeCentralRadius,
+                        playerObj
+                    )
+                    local haveWire = BunkersAnywhere.countElectricWireAvailable(playerObj)
+                    upgradeOpt.toolTip = ISToolTip:new()
+                    upgradeOpt.toolTip:initialise()
+                    upgradeOpt.toolTip:setVisible(false)
+                    upgradeOpt.toolTip.description = baText("IGUI_Bunker_CentralNeedWire", tostring(need), tostring(haveWire))
+                    if elecLevel < needElec then
+                        upgradeOpt.notAvailable = true
+                        upgradeOpt.toolTip.description = baText("ContextMenu_CentralNeedElectricityLevel", tostring(needElec), tostring(elecLevel))
+                    elseif haveWire < need then
+                        upgradeOpt.notAvailable = true
+                    end
+                else
+                    local upgradeMax = context:addOption(baText("ContextMenu_CentralUpgradeMax"))
+                    upgradeMax.notAvailable = true
+                end
+            else
+                local upgradeDisabled = context:addOption(baText("ContextMenu_CentralUpgradeDisabled"))
+                upgradeDisabled.notAvailable = true
+            end
 
             if energyPercent < BunkersAnywhere.CentralBattery.MaxEnergy then
                 context:addOption(baText("ContextMenu_CentralAutoLoadBattery"), centralObj, BunkersAnywhere.onInsertAnyCentralBattery, playerObj)
