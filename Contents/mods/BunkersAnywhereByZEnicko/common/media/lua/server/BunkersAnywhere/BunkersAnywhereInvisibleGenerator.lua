@@ -1266,6 +1266,15 @@ local function getNetworkState(store)
     local providers = {}
     local visited = {}
 
+    for key, node in pairs(store.nodes) do
+        if node and node.source ~= false then
+            local square = getSquare(node.x, node.y, node.z)
+            if square then
+                hydrateNodeStateFromCentral(square, node)
+            end
+        end
+    end
+
     for rootKey, rootNode in pairs(store.nodes) do
         if rootNode and rootNode.active and not visited[rootKey] then
             local stack = { rootKey }
@@ -2100,6 +2109,10 @@ local function upgradeCentralRadiusAt(x, y, z, player, args)
         return false
     end
 
+    local square = getSquare(x, y, z)
+    if square then
+        hydrateNodeStateFromCentral(square, node)
+    end
     node.radiusBonus = nextBonus
     transmitStore()
     applyNetworkPower(store)
