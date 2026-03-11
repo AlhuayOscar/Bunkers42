@@ -41,6 +41,7 @@ local CFG = {
     UseCustomPoweredSquares = true,
     RelayMeshTickInterval = 180,
     RelayMeshSpacing = 28,
+    RelayMeshMinSpacing = 12,
     HiddenGeneratorMaxDrop = 24,
     HiddenGeneratorExtraDepth = 3,
 }
@@ -1535,7 +1536,10 @@ end
 
 local function forEachRelayMeshAnchor(node, fn)
     if not node or not fn then return end
-    local spacing = math.max(8, math.floor(tonumber(CFG.RelayMeshSpacing) or 28))
+    local baseSpacing = math.max(8, math.floor(tonumber(CFG.RelayMeshSpacing) or 28))
+    local minSpacing = math.max(8, math.floor(tonumber(CFG.RelayMeshMinSpacing) or 12))
+    local bonus = clampRadiusBonus(node and node.radiusBonus)
+    local spacing = math.max(minSpacing, baseSpacing - math.floor(bonus / 100) * 2)
     local r = math.max(1, getNodePowerRadius(node))
     local row = 0
     for ay = node.y - r, node.y + r, spacing do
