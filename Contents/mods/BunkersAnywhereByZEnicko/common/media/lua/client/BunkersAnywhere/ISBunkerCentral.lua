@@ -9,10 +9,10 @@ BunkersAnywhere.InvisibleCentralGenerator = {
     PlacementSpriteNameAlt = "location_business_bank_01_66",
     ZLevel = -1,
     BaseRadius = 100,
-    RadiusUpgradeBonus = 2000,
+    RadiusUpgradeBonus = 25,
     RadiusUpgradeWireCost = 50,
-    RadiusUpgradeBonuses = { 25, 50, 100, 200, 500, 1000, 2000 },
-    RadiusUpgradeWireCosts = { 50, 50, 50, 50, 50, 50, 200 },
+    RadiusUpgradeBonuses = { 25 },
+    RadiusUpgradeWireCosts = { 50 },
     RadiusUpgradeEnabled = true,
 }
 

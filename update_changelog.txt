@@ -1,30 +1,14 @@
-WIP ELECTRIC SYSTEM UPDATE
-Build 42.4.x
+RADIUS UPGRADE STABILITY NOTICE
+Build 42.15.0
 
 EN
-- Added the new WIP electric central system for bunker power management.
-- Hidden generator activation is now kept in sync more reliably after turning a central off and on again.
-- Fixed a case where the central could shut down a few seconds after being turned back on while still draining battery time.
-- Reworked battery runtime handling to use explicit durations instead of the old short percentage-based behavior.
-- Battery runtimes are now:
-  CarBattery = 24 hours
-  CarBattery1 = 48 hours
-  CarBattery2 = 48 hours
-  CarBattery3 = 1 week
-- Central battery insert/remove flow and runtime display were updated to match the new WIP electric system.
-- Central menus, labels, and warnings now use English by default and Spanish only when the game language is Spanish.
-- Added new translation keys for central status, battery actions, warnings, and overlay text.
+- Central radius upgrade remains unstable beyond the first tier.
+- Only the first stable radius upgrade tier is enabled for now.
+- Higher radius upgrade tiers have been temporarily disabled to avoid unreliable electricity coverage and stuttering.
+- Workshop description was updated to reflect the current safe state of the feature.
 
 ES
-- Agregado el nuevo sistema electrico WIP de centrales para gestionar energia en los bunkers.
-- La activacion del generador oculto ahora se mantiene sincronizada de forma mas fiable despues de apagar y volver a encender una central.
-- Corregido un caso en el que la central se apagaba unos segundos despues de volver a encenderse mientras seguia consumiendo bateria.
-- Ajustado el manejo del tiempo de bateria para usar duraciones explicitas en lugar del comportamiento anterior basado en porcentajes cortos.
-- Las duraciones de baterias ahora son:
-  CarBattery = 24 horas
-  CarBattery1 = 48 horas
-  CarBattery2 = 48 horas
-  CarBattery3 = 1 semana
-- El flujo de insertar/quitar baterias y la visualizacion del tiempo restante ahora coinciden con el nuevo sistema electrico WIP.
-- Los menus, etiquetas y avisos de la central ahora usan ingles por defecto y espanol solo cuando el juego esta en espanol.
-- Agregadas nuevas claves de traduccion para estado de central, acciones de bateria, avisos y texto de overlay.
+- La ampliacion de radio de la central sigue siendo inestable despues del primer tier.
+- Solo queda habilitado por ahora el primer tier estable de ampliacion de radio.
+- Los tiers superiores de ampliacion de radio quedaron deshabilitados temporalmente para evitar cobertura electrica inconsistente y stuttering.
+- La descripcion de la Workshop fue actualizada para reflejar el estado seguro actual de la funcion.
