@@ -1,6 +1,6 @@
 version=1
 id=3676050156
-title=Easy Bunkers by ZEnicko
+title=Bunker by ZEnicko [42.15 Working!]
 description=[b]100% Working on Singleplayer and Multiplayer for the latest [Unstable] 42.4.x - March 2026[/b]
 description=
 description=[h1]🛠️ Easy Bunkers – Seal Any Staircase & Create Hidden Bases[/h1]
@@ -128,6 +128,5 @@ description=
 description=[h2]🧩 Información Técnica[/h2]
 description=Desarrollado por ZEnicko
 description=Creado de forma nativa y optimizado para la última Build 42.4.x [Unstable], totalmente compatible con Cooperativo y Multijugador.
-description=
 tags=Build 42;Building;Textures;WIP
 visibility=public
