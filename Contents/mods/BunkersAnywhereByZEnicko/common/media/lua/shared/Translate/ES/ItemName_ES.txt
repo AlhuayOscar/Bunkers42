@@ -2,4 +2,5 @@ ItemName_ES = {
     ItemName_Base.BunkerDoor = "Entrada de Bunker",
     ItemName_Base.BunkerLadder = "Escalera de Bunker",
     ItemName_Base.BunkerKit = "Kit de Bunker",
+    ItemName_Base.ElectricCentral = "Central Electrica",
 }

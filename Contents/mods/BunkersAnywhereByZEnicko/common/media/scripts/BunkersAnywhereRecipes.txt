@@ -1,0 +1,186 @@
+module Base
+{
+    craftRecipe Fabricar Central Electrica (Placas Normales + Tubos)
+    {
+        timedAction = DismantleElectrical,
+        Time = 250,
+        SkillRequired = Electricity:3,
+        Tags = AnySurfaceCraft,
+        category = Electrical,
+        xpAward = Electricity:3,
+        inputs
+        {
+            item 10 [Base.Screws] flags[NoBrokenItems],
+            item 6 [Base.SheetMetal] flags[NoBrokenItems],
+            item 4 [Base.MetalPipe] flags[NoBrokenItems],
+            item 1 tags[CarBattery] flags[NoBrokenItems],
+            item 1 [Base.RadioTransmitter] flags[NoBrokenItems],
+            item 1 tags[Aluminum] flags[NoBrokenItems],
+            item 20 [Base.ElectricWire] flags[NoBrokenItems],
+        }
+        outputs
+        {
+            item 1 Base.ElectricCentral,
+        }
+    }
+
+    craftRecipe Fabricar Central Electrica (Placas Normales + Varas)
+    {
+        timedAction = DismantleElectrical,
+        Time = 250,
+        SkillRequired = Electricity:3,
+        Tags = AnySurfaceCraft,
+        category = Electrical,
+        xpAward = Electricity:3,
+        inputs
+        {
+            item 10 [Base.Screws] flags[NoBrokenItems],
+            item 6 [Base.SheetMetal] flags[NoBrokenItems],
+            item 4 [Base.MetalBar] flags[NoBrokenItems],
+            item 1 tags[CarBattery] flags[NoBrokenItems],
+            item 1 [Base.RadioTransmitter] flags[NoBrokenItems],
+            item 1 tags[Aluminum] flags[NoBrokenItems],
+            item 20 [Base.ElectricWire] flags[NoBrokenItems],
+        }
+        outputs
+        {
+            item 1 Base.ElectricCentral,
+        }
+    }
+
+    craftRecipe Fabricar Central Electrica (Placas Pequenas + Tubos)
+    {
+        timedAction = DismantleElectrical,
+        Time = 250,
+        SkillRequired = Electricity:3,
+        Tags = AnySurfaceCraft,
+        category = Electrical,
+        xpAward = Electricity:3,
+        inputs
+        {
+            item 10 [Base.Screws] flags[NoBrokenItems],
+            item 24 [Base.SmallSheetMetal] flags[NoBrokenItems],
+            item 4 [Base.MetalPipe] flags[NoBrokenItems],
+            item 1 tags[CarBattery] flags[NoBrokenItems],
+            item 1 [Base.RadioTransmitter] flags[NoBrokenItems],
+            item 1 tags[Aluminum] flags[NoBrokenItems],
+            item 20 [Base.ElectricWire] flags[NoBrokenItems],
+        }
+        outputs
+        {
+            item 1 Base.ElectricCentral,
+        }
+    }
+
+    craftRecipe Fabricar Central Electrica (Placas Pequenas + Varas)
+    {
+        timedAction = DismantleElectrical,
+        Time = 250,
+        SkillRequired = Electricity:3,
+        Tags = AnySurfaceCraft,
+        category = Electrical,
+        xpAward = Electricity:3,
+        inputs
+        {
+            item 10 [Base.Screws] flags[NoBrokenItems],
+            item 24 [Base.SmallSheetMetal] flags[NoBrokenItems],
+            item 4 [Base.MetalBar] flags[NoBrokenItems],
+            item 1 tags[CarBattery] flags[NoBrokenItems],
+            item 1 [Base.RadioTransmitter] flags[NoBrokenItems],
+            item 1 tags[Aluminum] flags[NoBrokenItems],
+            item 20 [Base.ElectricWire] flags[NoBrokenItems],
+        }
+        outputs
+        {
+            item 1 Base.ElectricCentral,
+        }
+    }
+
+    craftRecipe Fabricar Bunker Kit (Placas Normales + Tubos)
+    {
+        timedAction = DismantleElectrical,
+        Time = 350,
+        SkillRequired = Mechanics:1;MetalWelding:1;Woodwork:1,
+        Tags = AnySurfaceCraft,
+        category = Metalworking,
+        xpAward = Mechanics:1;MetalWelding:1;Woodwork:1,
+        inputs
+        {
+            item 35 [Base.SheetMetal] flags[NoBrokenItems],
+            item 8 [Base.MetalPipe] flags[NoBrokenItems],
+            item 1 [Base.Hinge] flags[NoBrokenItems],
+            item 1 [Base.Doorknob] flags[NoBrokenItems],
+            item 25 [Base.Screws] flags[NoBrokenItems],
+        }
+        outputs
+        {
+            item 1 Base.BunkerKit,
+        }
+    }
+
+    craftRecipe Fabricar Bunker Kit (Placas Normales + Varas)
+    {
+        timedAction = DismantleElectrical,
+        Time = 350,
+        SkillRequired = Mechanics:1;MetalWelding:1;Woodwork:1,
+        Tags = AnySurfaceCraft,
+        category = Metalworking,
+        xpAward = Mechanics:1;MetalWelding:1;Woodwork:1,
+        inputs
+        {
+            item 35 [Base.SheetMetal] flags[NoBrokenItems],
+            item 8 [Base.MetalBar] flags[NoBrokenItems],
+            item 1 [Base.Hinge] flags[NoBrokenItems],
+            item 1 [Base.Doorknob] flags[NoBrokenItems],
+            item 25 [Base.Screws] flags[NoBrokenItems],
+        }
+        outputs
+        {
+            item 1 Base.BunkerKit,
+        }
+    }
+
+    craftRecipe Fabricar Bunker Kit (Placas Pequenas + Tubos)
+    {
+        timedAction = DismantleElectrical,
+        Time = 350,
+        SkillRequired = Mechanics:1;MetalWelding:1;Woodwork:1,
+        Tags = AnySurfaceCraft,
+        category = Metalworking,
+        xpAward = Mechanics:1;MetalWelding:1;Woodwork:1,
+        inputs
+        {
+            item 140 [Base.SmallSheetMetal] flags[NoBrokenItems],
+            item 8 [Base.MetalPipe] flags[NoBrokenItems],
+            item 1 [Base.Hinge] flags[NoBrokenItems],
+            item 1 [Base.Doorknob] flags[NoBrokenItems],
+            item 25 [Base.Screws] flags[NoBrokenItems],
+        }
+        outputs
+        {
+            item 1 Base.BunkerKit,
+        }
+    }
+
+    craftRecipe Fabricar Bunker Kit (Placas Pequenas + Varas)
+    {
+        timedAction = DismantleElectrical,
+        Time = 350,
+        SkillRequired = Mechanics:1;MetalWelding:1;Woodwork:1,
+        Tags = AnySurfaceCraft,
+        category = Metalworking,
+        xpAward = Mechanics:1;MetalWelding:1;Woodwork:1,
+        inputs
+        {
+            item 140 [Base.SmallSheetMetal] flags[NoBrokenItems],
+            item 8 [Base.MetalBar] flags[NoBrokenItems],
+            item 1 [Base.Hinge] flags[NoBrokenItems],
+            item 1 [Base.Doorknob] flags[NoBrokenItems],
+            item 25 [Base.Screws] flags[NoBrokenItems],
+        }
+        outputs
+        {
+            item 1 Base.BunkerKit,
+        }
+    }
+}

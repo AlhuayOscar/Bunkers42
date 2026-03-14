@@ -3,27 +3,63 @@ module Base
     item BunkerDoor
     {
         ItemType = base:normal,
-        DisplayName = "Puerta de Bunker",
-        DisplayCategory = Material,
+        DisplayName = Bunker Entrance,
         Icon = DoorBunker,
+        DisplayCategory = Material,
         Weight = 10,
     }
 
     item BunkerLadder
     {
         ItemType = base:normal,
-        DisplayName = "Escalera de Bunker",
-        DisplayCategory = Material,
+        DisplayName = Bunker Ladder,
         Icon = LadderSewer,
+        DisplayCategory = Material,
         Weight = 5,
     }
 
     item BunkerKit
     {
         ItemType = base:normal,
-        DisplayName = "Kit de Bunker",
-        DisplayCategory = Household,
+        DisplayName = Bunker Kit,
         Icon = BunkerKit,
+        DisplayCategory = Household,
         Weight = 20,
+    }
+
+    item ElectricCentral
+    {
+        ItemType = base:Moveable,
+        DisplayName = Electric Central,
+        Icon = Central,
+        WorldObjectSprite = location_business_bank_01_68,
+        DisplayCategory = Household,
+        Weight = 40,
+    }
+
+    item ElectricCentralNorth
+    {
+        ItemType = base:Moveable,
+        DisplayName = Electric Central,
+        Icon = Central,
+        WorldObjectSprite = location_business_bank_01_69,
+        DisplayCategory = Household,
+        Weight = 40,
+    }
+}
+
+module BunkersAnywhere
+{
+    item RelayGenerator
+    {
+        ItemType = base:normal,
+        DisplayName = Relay Generator,
+        Icon = Generator,
+        DisplayCategory = Electronics,
+        Weight = 40,
+        WorldObjectSprite = ba_relay_generator_0,
+        SoundRadius = 1,
+        SoundVolume = 1,
+        Tags = Generator;HeavyItem,
     }
 }

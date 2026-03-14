@@ -1,6 +1,79 @@
 BunkersAnywhere = BunkersAnywhere or {}
 require "ISUI/ISInventoryPaneContextMenu"
 
+local BA_DOOR_TEXT = {
+    EN = {
+        ContextMenu_InstallEntrance = "Install Entrance (Down Only)",
+        ContextMenu_InstallLadder = "Install Ladder (Up Only)",
+        ContextMenu_UnpackBunkerKit = "Unpack Bunker Kit",
+        ContextMenu_EntranceDown = "Entrance (Down)",
+        ContextMenu_LadderUp = "Ladder (Up)",
+        ContextMenu_GoDownBasement = "Go Down to Basement (Z-1)",
+        ContextMenu_UninstallEntrance = "Uninstall Entrance",
+        ContextMenu_GoUpFloor = "Go Up to Floor (Z+1)",
+        ContextMenu_UninstallLadder = "Uninstall Ladder",
+        ContextMenu_InstallBunkerKit = "Install Bunker Kit (Replace Stairs)",
+    },
+    ES = {
+        ContextMenu_InstallEntrance = "Instalar Entrada (Solo Bajar)",
+        ContextMenu_InstallLadder = "Instalar Escalera (Solo Subir)",
+        ContextMenu_UnpackBunkerKit = "Desempaquetar Kit de Bunker",
+        ContextMenu_EntranceDown = "Entrada (Bajar)",
+        ContextMenu_LadderUp = "Escalera (Subir)",
+        ContextMenu_GoDownBasement = "Bajar al Sotano (Z-1)",
+        ContextMenu_UninstallEntrance = "Desinstalar Entrada",
+        ContextMenu_GoUpFloor = "Subir a Planta Baja (Z+1)",
+        ContextMenu_UninstallLadder = "Desinstalar Escalera",
+        ContextMenu_InstallBunkerKit = "Instalar Kit de Bunker (Sustituir Escaleras)",
+    },
+}
+
+local function baDoorLanguageCode()
+    local candidates = {}
+    if Translator and Translator.getLanguage then
+        local ok, value = pcall(function() return Translator.getLanguage() end)
+        if ok and value then table.insert(candidates, value) end
+    end
+    if getCore then
+        local core = getCore()
+        if core then
+            if core.getOptionLanguageName then
+                local ok, value = pcall(function() return core:getOptionLanguageName() end)
+                if ok and value then table.insert(candidates, value) end
+            end
+            if core.getOptionLanguage then
+                local ok, value = pcall(function() return core:getOptionLanguage() end)
+                if ok and value then table.insert(candidates, value) end
+            end
+        end
+    end
+    for i = 1, #candidates do
+        local raw = string.upper(tostring(candidates[i] or ""))
+        if raw == "ES" or raw == "ES_AR" or raw == "ES-AR" or raw == "ES_ES" or raw == "ES-ES" then return "ES" end
+        if raw == "SPANISH" or string.find(raw, "SPANISH", 1, true) == 1 then return "ES" end
+        if raw == "EN" or raw == "EN_US" or raw == "EN-US" or raw == "EN_GB" or raw == "EN-GB" then return "EN" end
+        if raw == "ENGLISH" or string.find(raw, "ENGLISH", 1, true) == 1 then return "EN" end
+    end
+    return "EN"
+end
+
+local function baDoorText(key, ...)
+    local translated = getText and getText(key, ...) or key
+    if translated and translated ~= key then
+        return translated
+    end
+
+    local lang = baDoorLanguageCode()
+    local tableByLang = BA_DOOR_TEXT[lang] or BA_DOOR_TEXT.EN
+    local template = tableByLang[key] or BA_DOOR_TEXT.EN[key] or key
+    local result = tostring(template)
+    local args = { ... }
+    for i = 1, #args do
+        result = string.gsub(result, "%%" .. tostring(i), tostring(args[i]))
+    end
+    return result
+end
+
 -- Sprites dinÃ¡micos
 BunkersAnywhere.Sprites = {
     InsideEntrance = "street_decoration_01_15", -- Escotilla/Manhole
@@ -20,50 +93,163 @@ end
 -- Central system moved to ISBunkerCentral.lua
 
 function BunkersAnywhere.teleportToZ(playerObj, newZ, targetX, targetY)
-    if playerObj and newZ ~= nil and targetX ~= nil and targetY ~= nil then
-        local cell = getCell()
-        local targetSq = cell:getGridSquare(math.floor(targetX), math.floor(targetY), newZ)
-        
-        -- Centramos al jugador EXACTAMENTE en la escalera/tapa de destino
-        playerObj:setX(math.floor(targetX) + 0.5)
-        playerObj:setY(math.floor(targetY) + 0.5)
-        playerObj:setZ(newZ)
-        
-        -- Forzamos la actualizaciÃ³n de coordenadas "last" para evitar interpolaciones raras en MP
-        playerObj:setLx(playerObj:getX())
-        playerObj:setLy(playerObj:getY())
-        playerObj:setLz(playerObj:getZ())
-        
-        if targetSq then
-            playerObj:setCurrent(targetSq)
-        end
+    if not playerObj or type(newZ) ~= "number" or type(targetX) ~= "number" or type(targetY) ~= "number" then return end
+
+    local tx = math.floor(targetX)
+    local ty = math.floor(targetY)
+
+    -- Centramos al jugador EXACTAMENTE en la escalera/tapa de destino.
+    if type(playerObj.setX) == "function" then pcall(function() playerObj:setX(tx + 0.5) end) end
+    if type(playerObj.setY) == "function" then pcall(function() playerObj:setY(ty + 0.5) end) end
+    if type(playerObj.setZ) == "function" then pcall(function() playerObj:setZ(newZ) end) end
+
+    -- Forzamos actualizacion de coordenadas "last" solo si la API existe.
+    if type(playerObj.getX) == "function" and type(playerObj.setLx) == "function" then
+        local okX, px = pcall(function() return playerObj:getX() end)
+        if okX then pcall(function() playerObj:setLx(px) end) end
+    end
+    if type(playerObj.getY) == "function" and type(playerObj.setLy) == "function" then
+        local okY, py = pcall(function() return playerObj:getY() end)
+        if okY then pcall(function() playerObj:setLy(py) end) end
+    end
+    if type(playerObj.getZ) == "function" and type(playerObj.setLz) == "function" then
+        local okZ, pz = pcall(function() return playerObj:getZ() end)
+        if okZ then pcall(function() playerObj:setLz(pz) end) end
+    end
+
+    local targetSq = nil
+    local cell = getCell and getCell() or nil
+    if cell and type(cell.getGridSquare) == "function" then
+        local okSq, sq = pcall(function() return cell:getGridSquare(tx, ty, newZ) end)
+        if okSq then targetSq = sq end
+    end
+
+    if targetSq and type(playerObj.setCurrent) == "function" then
+        pcall(function() playerObj:setCurrent(targetSq) end)
     end
 end
-
 function BunkersAnywhere.canTeleportTo(sqX, sqY, targetZ)
+    if type(sqX) ~= "number" or type(sqY) ~= "number" or type(targetZ) ~= "number" then return false end
     if targetZ < -32 or targetZ > 7 then return false end
-    
-    local square = getCell():getGridSquare(sqX, sqY, targetZ)
-    
-    if square then
-        if square:getFloor() ~= nil or square:getRoom() ~= nil then
-            -- Verificar si el tile destino esta libre de solidos (paredes, mueles, etc.)
-            local objs = square:getObjects()
-            for i = 0, objs:size() - 1 do
-                local o = objs:get(i)
-                if o:getProperties() and (o:getProperties():Is(IsoFlagType.solid) or o:getProperties():Is(IsoFlagType.solidtrans)) then
-                    -- Ignorar los objetos del mismo mod u otras puertas, para no bloquear
-                    if not (o.getModData and o:getModData() and o:getModData().bunkerType) then
-                        return false
-                    end
+
+    local cell = getCell and getCell() or nil
+    if not cell then return false end
+
+    local okSquare, square = pcall(function()
+        return cell:getGridSquare(math.floor(sqX), math.floor(sqY), targetZ)
+    end)
+    if not okSquare or not square then return false end
+
+    if square:getFloor() == nil and square:getRoom() == nil then return false end
+
+    -- Verificar si el tile destino esta libre de solidos (paredes, muebles, etc.)
+    local objs = square:getObjects()
+    if not objs then return true end
+
+    local solidFlag = IsoFlagType and IsoFlagType.solid or nil
+    local solidTransFlag = IsoFlagType and IsoFlagType.solidtrans or nil
+
+    for i = 0, objs:size() - 1 do
+        local o = objs:get(i)
+        if o then
+            local props = nil
+            if type(o.getProperties) == "function" then
+                local okProps, resultProps = pcall(function() return o:getProperties() end)
+                if okProps then props = resultProps end
+            end
+
+            local isSolid = false
+            if props and type(props.Is) == "function" then
+                if solidFlag then
+                    local okSolid, hasSolid = pcall(function() return props:Is(solidFlag) end)
+                    if okSolid and hasSolid then isSolid = true end
+                end
+                if (not isSolid) and solidTransFlag then
+                    local okSolidTrans, hasSolidTrans = pcall(function() return props:Is(solidTransFlag) end)
+                    if okSolidTrans and hasSolidTrans then isSolid = true end
                 end
             end
-            return true
+
+            if isSolid then
+                -- Ignorar los objetos del mismo mod, para no bloquear.
+                local isBunkerObject = false
+                if type(o.getModData) == "function" then
+                    local okModData, md = pcall(function() return o:getModData() end)
+                    if okModData and md and md.bunkerType then
+                        isBunkerObject = true
+                    end
+                end
+                if not isBunkerObject then
+                    return false
+                end
+            end
         end
     end
-    return false
+
+    return true
 end
 
+function BunkersAnywhere.findDestination(fromSq, newZ, destType)
+    if not fromSq or type(newZ) ~= "number" then return nil, nil end
+
+    local cell = getCell and getCell() or nil
+    if not cell then return nil, nil end
+
+    local baseX = fromSq:getX()
+    local baseY = fromSq:getY()
+
+    local function findOnSquare(sq)
+        if not sq then return nil, nil end
+        local objs = sq:getObjects()
+        if not objs then return nil, nil end
+
+        for i = 0, objs:size() - 1 do
+            local o = objs:get(i)
+            if o and type(o.getModData) == "function" then
+                local okMd, md = pcall(function() return o:getModData() end)
+                if okMd and md and md.bunkerType == destType then
+                    return sq:getX() + 0.5, sq:getY() + 0.5
+                end
+            end
+        end
+
+        return nil, nil
+    end
+
+    local okSame, sameSq = pcall(function() return cell:getGridSquare(baseX, baseY, newZ) end)
+    if okSame and sameSq then
+        local dx, dy = findOnSquare(sameSq)
+        if dx and dy then return dx, dy end
+    end
+
+    for radius = 1, 2 do
+        for x = baseX - radius, baseX + radius do
+            for y = baseY - radius, baseY + radius do
+                local okSq, sq = pcall(function() return cell:getGridSquare(x, y, newZ) end)
+                if okSq and sq then
+                    local dx, dy = findOnSquare(sq)
+                    if dx and dy then return dx, dy end
+                end
+            end
+        end
+    end
+
+    if BunkersAnywhere.canTeleportTo(baseX, baseY, newZ) then
+        return baseX + 0.5, baseY + 0.5
+    end
+
+    for radius = 1, 3 do
+        for x = baseX - radius, baseX + radius do
+            for y = baseY - radius, baseY + radius do
+                if BunkersAnywhere.canTeleportTo(x, y, newZ) then
+                    return x + 0.5, y + 0.5
+                end
+            end
+        end
+    end
+
+    return nil, nil
+end
 -- FunciÃ³n para colocar objetos en el mundo
 function BunkersAnywhere.placeObject(worldobjects, playerObj, item, objName, zDir)
     local sq = playerObj:getSquare()
@@ -124,13 +310,25 @@ function BunkersAnywhere.isStair(obj)
                    string.find(spriteName, "carpentry_02_88") or 
                    string.find(spriteName, "carpentry_02_89") or 
                    string.find(spriteName, "carpentry_02_90") or 
+                   string.find(spriteName, "carpentry_02_96") or
+                   string.find(spriteName, "carpentry_02_97") or
+                   string.find(spriteName, "carpentry_02_98") or
                    string.find(spriteName, "constructedobjects_01_88") or 
                    string.find(spriteName, "constructedobjects_01_89") or 
                    string.find(spriteName, "constructedobjects_01_90") or
+                   string.find(spriteName, "constructedobjects_01_96") or
+                   string.find(spriteName, "constructedobjects_01_97") or
+                   string.find(spriteName, "constructedobjects_01_98") or
                    string.find(spriteName, "fixtures_stairs") or
+                   string.find(spriteName, "crafted_02_96") or
+                   string.find(spriteName, "crafted_02_97") or
+                   string.find(spriteName, "crafted_02_98") or
                    string.find(spriteName, "crafted_02_106") or
                    string.find(spriteName, "crafted_02_107") or
                    string.find(spriteName, "crafted_02_108") or
+                   string.find(spriteName, "location_hospitality_sunstarmotel_01_48") or
+                   string.find(spriteName, "location_hospitality_sunstarmotel_01_49") or
+                   string.find(spriteName, "location_hospitality_sunstarmotel_01_50") or
                    string.find(spriteName, "location_shop_mall_01_6") or -- Mall escalators
                    string.find(spriteName, "location_shop_mall_01_7") or
                    string.find(spriteName, "location_shop_mall_01_8") then
@@ -216,12 +414,69 @@ function BunkersAnywhere.ensureFloor(sq, floorSprite)
 end
 
 -- FUNCIÃ“N: Usar el Bunker Kit en escaleras
-function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
+function BunkersAnywhere.useBunkerKit(stairObj, playerObj, kitItem)
     local sq = stairObj:getSquare()
     local x, y, z = sq:getX(), sq:getY(), sq:getZ()
     local cell = getCell()
     local topZ = z + 1
     local woodFloorSprite = "carpentry_02_57"
+
+    local function logBunkerKitDebug(stage)
+        local inv = playerObj and playerObj.getInventory and playerObj:getInventory() or nil
+        local kitCount = 0
+        local invWeight = "na"
+        if inv then
+            if inv.getItems then
+                local items = inv:getItems()
+                for i = 0, items:size() - 1 do
+                    local invItem = items:get(i)
+                    local fullType = invItem and invItem.getFullType and invItem:getFullType() or nil
+                    local itemType = invItem and invItem.getType and invItem:getType() or nil
+                    if fullType == "Base.BunkerKit" or itemType == "BunkerKit" then
+                        kitCount = kitCount + 1
+                    end
+                end
+            end
+            if inv.getContentsWeight then
+                local okWeight, valueWeight = pcall(function() return inv:getContentsWeight() end)
+                if okWeight and valueWeight ~= nil then invWeight = tostring(valueWeight) end
+            end
+        end
+        local kitText = "nil"
+        if kitItem then
+            local fullType = kitItem.getFullType and kitItem:getFullType() or "nil"
+            local itemType = kitItem.getType and kitItem:getType() or "nil"
+            local itemId = kitItem.getID and kitItem:getID() or "nil"
+            kitText = tostring(fullType) .. "/" .. tostring(itemType) .. " id=" .. tostring(itemId)
+        end
+        print("[BunkersAnywhere][BunkerKitDebug] stage=" .. tostring(stage) .. " player=" .. tostring(playerObj and playerObj.getUsername and playerObj:getUsername() or "nil") .. " square=" .. tostring(x) .. "," .. tostring(y) .. "," .. tostring(z) .. " kit=" .. kitText .. " kitCount=" .. tostring(kitCount) .. " invWeight=" .. tostring(invWeight))
+    end
+
+    logBunkerKitDebug("begin")
+
+    local function shouldCreateUpperSupportFloor(baseSq, topSq)
+        if z < 0 then return true end
+        if not baseSq then return false end
+        if baseSq:getX() == x and baseSq:getY() == y then return true end
+        if baseSq:getRoom() ~= nil then return true end
+
+        local centerBuilding = sq:getBuilding()
+        local baseBuilding = baseSq:getBuilding()
+        if centerBuilding and baseBuilding and centerBuilding == baseBuilding then
+            return true
+        end
+
+        if topSq then
+            if topSq:getFloor() ~= nil then return true end
+            if topSq:getRoom() ~= nil then return true end
+            local topBuilding = topSq:getBuilding()
+            if centerBuilding and topBuilding and centerBuilding == topBuilding then
+                return true
+            end
+        end
+
+        return false
+    end
 
     -- 1. Buscar TODAS las partes de la escalera y barandillas y removerlas correctamente (9x9 para escaleras largas)
     local itemsToRemove = {}
@@ -261,7 +516,7 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
                 tSq = IsoGridSquare.new(cell, nil, item.xx, item.yy, topZ)
                 cell:ConnectNewSquare(tSq, false)
             end
-            if tSq then
+            if tSq and shouldCreateUpperSupportFloor(s, tSq) then
                 BunkersAnywhere.ensureFloor(tSq, woodFloorSprite)
             end
             patchedSquares[key] = true
@@ -292,7 +547,7 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
                 cell:ConnectNewSquare(tSq, false)
             end
             
-            if tSq then
+            if tSq and shouldCreateUpperSupportFloor(s, tSq) then
                 -- Si no hay suelo, lo aÃ±adimos y sincronizamos
                 BunkersAnywhere.ensureFloor(tSq, woodFloorSprite)
             end
@@ -347,8 +602,58 @@ function BunkersAnywhere.useBunkerKit(stairObj, playerObj)
         end
     end
 
-    -- Consumir el Kit
-    playerObj:getInventory():RemoveOneOf("Base.BunkerKit")
+    -- Consumir el kit usado de forma robusta para que no quede pesando en inventario.
+    local inv = playerObj and playerObj.getInventory and playerObj:getInventory() or nil
+    if inv and kitItem then
+        print("[BunkersAnywhere][BunkerKitDebug] removing exact kitItem")
+        inv:Remove(kitItem)
+    elseif inv and inv.getItems then
+        local items = inv:getItems()
+        for i = items:size() - 1, 0, -1 do
+            local invItem = items:get(i)
+            local fullType = invItem and invItem.getFullType and invItem:getFullType() or nil
+            local itemType = invItem and invItem.getType and invItem:getType() or nil
+            if fullType == "Base.BunkerKit" or itemType == "BunkerKit" then
+                inv:Remove(invItem)
+                break
+            end
+        end
+    end
+
+    if playerObj then
+        local primary = playerObj.getPrimaryHandItem and playerObj:getPrimaryHandItem() or nil
+        local secondary = playerObj.getSecondaryHandItem and playerObj:getSecondaryHandItem() or nil
+        local function isBunkerKitHandItem(handItem)
+            local fullType = handItem and handItem.getFullType and handItem:getFullType() or nil
+            local itemType = handItem and handItem.getType and handItem:getType() or nil
+            return fullType == "Base.BunkerKit" or itemType == "BunkerKit"
+        end
+        if isBunkerKitHandItem(primary) and playerObj.setPrimaryHandItem then
+            playerObj:setPrimaryHandItem(nil)
+        end
+        if isBunkerKitHandItem(secondary) and playerObj.setSecondaryHandItem then
+            playerObj:setSecondaryHandItem(nil)
+        end
+        local backItem = playerObj.getClothingItem_Back and playerObj:getClothingItem_Back() or nil
+        if isBunkerKitHandItem(backItem) and playerObj.setClothingItem_Back then
+            playerObj:setClothingItem_Back(nil)
+        end
+        if inv and inv.removeAllItemsOfType then
+            inv:removeAllItemsOfType("BunkerKit", false, true)
+        end
+        if inv and inv.removeAllItemsOfFullType then
+            inv:removeAllItemsOfFullType("Base.BunkerKit", false, true)
+        end
+        if inv and inv.setDrawDirty then inv:setDrawDirty(true) end
+        if inv and inv.setDirty then inv:setDirty(true) end
+        if inv and inv.refreshWeight then pcall(function() inv:refreshWeight() end) end
+        if playerObj.resetEquippedHandsModels then playerObj:resetEquippedHandsModels() end
+        if playerObj.resetModelNextFrame then playerObj:resetModelNextFrame() end
+        if playerObj.resetModel then pcall(function() playerObj:resetModel() end) end
+        if playerObj.updateHandEquips then pcall(function() playerObj:updateHandEquips() end) end
+    end
+
+    logBunkerKitDebug("after_remove")
     playerObj:setHaloNote(getText("IGUI_Bunker_StructureSealed"), 0, 255, 100, 400)
 end
 
@@ -420,38 +725,124 @@ end
 -- Wrappers para forzar TimedActions en los MenÃºs
 -- ==========================================================
 
-function BunkersAnywhere.onInstallBunkerKit(stairObj, playerObj)
+function BunkersAnywhere.onInstallBunkerKit(stairObj, playerObj, kitItem)
+    local kitText = "nil"
+    if kitItem then
+        local fullType = kitItem.getFullType and kitItem:getFullType() or "nil"
+        local itemType = kitItem.getType and kitItem:getType() or "nil"
+        local itemId = kitItem.getID and kitItem:getID() or "nil"
+        kitText = tostring(fullType) .. "/" .. tostring(itemType) .. " id=" .. tostring(itemId)
+    end
+    print("[BunkersAnywhere][BunkerKitDebug] queue_install player=" .. tostring(playerObj and playerObj.getUsername and playerObj:getUsername() or "nil") .. " kit=" .. kitText)
+
+    local function isBunkerKitItem(item)
+        local fullType = item and item.getFullType and item:getFullType() or nil
+        local itemType = item and item.getType and item:getType() or nil
+        return fullType == "Base.BunkerKit" or itemType == "BunkerKit"
+    end
+
+    local inv = playerObj and playerObj.getInventory and playerObj:getInventory() or nil
+    if playerObj then
+        local primary = playerObj.getPrimaryHandItem and playerObj:getPrimaryHandItem() or nil
+        local secondary = playerObj.getSecondaryHandItem and playerObj:getSecondaryHandItem() or nil
+        if isBunkerKitItem(primary) and playerObj.setPrimaryHandItem then
+            playerObj:setPrimaryHandItem(nil)
+        end
+        if isBunkerKitItem(secondary) and playerObj.setSecondaryHandItem then
+            playerObj:setSecondaryHandItem(nil)
+        end
+        local backItem = playerObj.getClothingItem_Back and playerObj:getClothingItem_Back() or nil
+        if isBunkerKitItem(backItem) and playerObj.setClothingItem_Back then
+            playerObj:setClothingItem_Back(nil)
+        end
+        if playerObj.resetEquippedHandsModels then playerObj:resetEquippedHandsModels() end
+        if playerObj.resetModelNextFrame then playerObj:resetModelNextFrame() end
+        if playerObj.resetModel then pcall(function() playerObj:resetModel() end) end
+        if playerObj.updateHandEquips then pcall(function() playerObj:updateHandEquips() end) end
+    end
+
+    if inv and kitItem then
+        print("[BunkersAnywhere][BunkerKitDebug] pre_remove exact kitItem")
+        inv:Remove(kitItem)
+        kitItem = nil
+    elseif inv and inv.getItems then
+        local items = inv:getItems()
+        for i = items:size() - 1, 0, -1 do
+            local invItem = items:get(i)
+            if isBunkerKitItem(invItem) then
+                print("[BunkersAnywhere][BunkerKitDebug] pre_remove fallback kitItem")
+                inv:Remove(invItem)
+                break
+            end
+        end
+    end
+
+    if inv and inv.removeAllItemsOfType then
+        inv:removeAllItemsOfType("BunkerKit", false, true)
+    end
+    if inv and inv.removeAllItemsOfFullType then
+        inv:removeAllItemsOfFullType("Base.BunkerKit", false, true)
+    end
+    if inv and inv.setDrawDirty then inv:setDrawDirty(true) end
+    if inv and inv.setDirty then inv:setDirty(true) end
+    if isClient() and sendClientCommand then
+        sendClientCommand("BunkersAnywhere", "ConsumeBunkerKit", {
+            itemId = kitItem and kitItem.getID and kitItem:getID() or -1,
+            fullType = "Base.BunkerKit"
+        })
+    end
+
     if luautils.walk(playerObj, stairObj:getSquare()) then
-        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, stairObj:getSquare(), 250, "Loot", "Carpentry", BunkersAnywhere.useBunkerKit, stairObj, playerObj))
+        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, stairObj:getSquare(), 250, "Loot", "Carpentry", BunkersAnywhere.useBunkerKit, stairObj, playerObj, nil))
     end
 end
 
 function BunkersAnywhere.onTeleport(targetObj, playerObj, newZ)
+    if not targetObj or not playerObj or type(newZ) ~= "number" then return end
+
     local targetSq = targetObj:getSquare()
+    if not targetSq then return end
+
     local x, y, z = targetSq:getX(), targetSq:getY(), targetSq:getZ()
-    local bType = targetObj:getModData().bunkerType
-    
+
+    local md = nil
+    if type(targetObj.getModData) == "function" then
+        local okMd, resultMd = pcall(function() return targetObj:getModData() end)
+        if okMd then md = resultMd end
+    end
+    local bType = md and md.bunkerType or nil
+    if not bType then return end
+
     local destType = (bType == "Entrada de Bunker") and "Escalera de Bunker" or "Entrada de Bunker"
     local destX, destY = BunkersAnywhere.findDestination(targetSq, newZ, destType)
-    
+    if not destX or not destY then
+        playerObj:setHaloNote(getText("IGUI_Bunker_NoFloorTarget"), 255, 0, 0, 350)
+        return
+    end
+
     local pSq = playerObj:getCurrentSquare()
     local sameZ = math.abs(playerObj:getZ() - z) < 0.5
     local distX = math.abs(playerObj:getX() - (x + 0.5))
     local distY = math.abs(playerObj:getY() - (y + 0.5))
     local blocked = false
-    
+
     if pSq and targetSq and pSq ~= targetSq then
-        blocked = pSq:isBlockedTo(targetSq)
+        if type(pSq.isBlockedTo) == "function" then
+            local okBlocked, isBlocked = pcall(function() return pSq:isBlockedTo(targetSq) end)
+            if okBlocked and isBlocked then blocked = true end
+        end
     end
-    
+
     -- Si estamos en un tile adyacente o en el mismo, interceptamos para no caminar
     if distX < 1.5 and distY < 1.5 and sameZ then
         if blocked then
             -- Si esta bloqueado (ej: separado por pared o barandilla), simplemente salimos.
-            -- Asi presionando 'E' el personaje no saltarÃ¡ ni correrÃ¡ hacia otra escalera.
+            -- Asi presionando 'E' el personaje no saltara ni correra hacia otra escalera.
             return
         end
-        playerObj:faceThisObject(targetObj)
+        if type(playerObj.faceThisObject) == "function" then
+            playerObj:faceThisObject(targetObj)
+        end
         ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetSq, 25, "Loot", nil, BunkersAnywhere.teleportToZ, playerObj, newZ, destX, destY))
     else
         -- Desde lejos (click derecho), usamos walk normal
@@ -460,7 +851,6 @@ function BunkersAnywhere.onTeleport(targetObj, playerObj, newZ)
         end
     end
 end
-
 function BunkersAnywhere.onRemove(targetObj, playerObj, itemFullType)
     if luautils.walk(playerObj, targetObj:getSquare()) then
         ISTimedActionQueue.add(ISBunkerAction:new(playerObj, targetObj:getSquare(), 150, "Loot", "Carpentry", BunkersAnywhere.removeObject, targetObj, playerObj, itemFullType))
@@ -502,17 +892,17 @@ local function BunkersAnywhereInventoryContext(player, context, items)
     local worldobjects = { playerObj:getCurrentSquare() } -- Fallback
 
     if bunkerDoorItem then
-        local option = context:addOption(getText("ContextMenu_InstallEntrance"), worldobjects, BunkersAnywhere.onPlaceObject, playerObj, bunkerDoorItem, "Entrada de Bunker", -1)
+        local option = context:addOption(baDoorText("ContextMenu_InstallEntrance"), worldobjects, BunkersAnywhere.onPlaceObject, playerObj, bunkerDoorItem, "Entrada de Bunker", -1)
         if not BunkersAnywhere.canTeleportTo(playerObj:getX(), playerObj:getY(), playerObj:getZ() - 1) then option.notAvailable = true end
     end
 
     if bunkerLadderItem then
-        local option = context:addOption(getText("ContextMenu_InstallLadder"), worldobjects, BunkersAnywhere.onPlaceObject, playerObj, bunkerLadderItem, "Escalera de Bunker", 1)
+        local option = context:addOption(baDoorText("ContextMenu_InstallLadder"), worldobjects, BunkersAnywhere.onPlaceObject, playerObj, bunkerLadderItem, "Escalera de Bunker", 1)
         if not BunkersAnywhere.canTeleportTo(playerObj:getX(), playerObj:getY(), playerObj:getZ() + 1) then option.notAvailable = true end
     end
 
     if bunkerKitItem then
-        context:addOption(getText("ContextMenu_UnpackBunkerKit"), bunkerKitItem, BunkersAnywhere.onUnpackBunkerKit, playerObj)
+        context:addOption(baDoorText("ContextMenu_UnpackBunkerKit"), bunkerKitItem, BunkersAnywhere.onUnpackBunkerKit, playerObj)
     end
 end
 
@@ -567,27 +957,40 @@ local function BunkersAnywhereWorldContext(player, context, worldobjects, test)
         local sq = targetObj:getSquare()
         if not sq then return end
         local bType = targetObj:getModData().bunkerType
-        local optionName = (bType == "Entrada de Bunker") and getText("ContextMenu_EntranceDown") or getText("ContextMenu_LadderUp")
+        local optionName = (bType == "Entrada de Bunker") and baDoorText("ContextMenu_EntranceDown") or baDoorText("ContextMenu_LadderUp")
         local submenu = context:addOption(optionName)
         local submenuCtx = ISContextMenu:getNew(context)
         context:addSubMenu(submenu, submenuCtx)
 
         if bType == "Entrada de Bunker" then
-            local downOption = submenuCtx:addOption(getText("ContextMenu_GoDownBasement"), targetObj, BunkersAnywhere.onTeleport, playerObj, z - 1)
+            local downOption = submenuCtx:addOption(baDoorText("ContextMenu_GoDownBasement"), targetObj, BunkersAnywhere.onTeleport, playerObj, z - 1)
             if not BunkersAnywhere.canTeleportTo(sq:getX(), sq:getY(), z - 1) then downOption.notAvailable = true end
-            submenuCtx:addOption(getText("ContextMenu_UninstallEntrance"), targetObj, BunkersAnywhere.onRemove, playerObj, "Base.BunkerDoor")
+            submenuCtx:addOption(baDoorText("ContextMenu_UninstallEntrance"), targetObj, BunkersAnywhere.onRemove, playerObj, "Base.BunkerDoor")
         else
-            local upOption = submenuCtx:addOption(getText("ContextMenu_GoUpFloor"), targetObj, BunkersAnywhere.onTeleport, playerObj, z + 1)
+            local upOption = submenuCtx:addOption(baDoorText("ContextMenu_GoUpFloor"), targetObj, BunkersAnywhere.onTeleport, playerObj, z + 1)
             if not BunkersAnywhere.canTeleportTo(sq:getX(), sq:getY(), z + 1) then upOption.notAvailable = true end
-            submenuCtx:addOption(getText("ContextMenu_UninstallLadder"), targetObj, BunkersAnywhere.onRemove, playerObj, "Base.BunkerLadder")
+            submenuCtx:addOption(baDoorText("ContextMenu_UninstallLadder"), targetObj, BunkersAnywhere.onRemove, playerObj, "Base.BunkerLadder")
         end
     end
 
     -- Men� para el BUNKER KIT (sobre escaleras vanilla)
     if stairObj then
         local inv = playerObj:getInventory()
-        if inv:containsWithModule("Base.BunkerKit") then
-            context:addOption(getText("ContextMenu_InstallBunkerKit"), stairObj, BunkersAnywhere.onInstallBunkerKit, playerObj)
+        local bunkerKitItem = nil
+        local invItems = inv and inv.getItems and inv:getItems() or nil
+        if invItems then
+            for i = 0, invItems:size() - 1 do
+                local invItem = invItems:get(i)
+                local fullType = invItem and invItem.getFullType and invItem:getFullType() or nil
+                local itemType = invItem and invItem.getType and invItem:getType() or nil
+                if fullType == "Base.BunkerKit" or itemType == "BunkerKit" then
+                    bunkerKitItem = invItem
+                    break
+                end
+            end
+        end
+        if bunkerKitItem then
+            context:addOption(baDoorText("ContextMenu_InstallBunkerKit"), stairObj, BunkersAnywhere.onInstallBunkerKit, playerObj, bunkerKitItem)
         end
     end
 end
@@ -629,7 +1032,12 @@ local function BunkersAnywhereOnKeyPressed(key)
                         local md = obj:getModData()
                         if md and md.bunkerType then
                             -- Confirmar que esten en la misma casilla o no esten separados por paredes fisicas
-                            if sq == searchSq or not sq:isBlockedTo(searchSq) then
+                            local canUse = (sq == searchSq)
+                            if (not canUse) and type(sq.isBlockedTo) == "function" then
+                                local okBlocked, isBlocked = pcall(function() return sq:isBlockedTo(searchSq) end)
+                                canUse = (okBlocked and not isBlocked) or (not okBlocked)
+                            end
+                            if canUse then
                                 targetObj = obj
                                 break
                             end
