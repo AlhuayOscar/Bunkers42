@@ -1,6 +1,6 @@
 version=1
 id=3676050156
-title=Easy Bunkers by ZEnicko
+title=Bunker by ZEnicko
 description=[b]Build 42.15.0 MP/SP - March 2026[/b]
 description=[h2]Current Status[/h2]
 description=[list]
@@ -87,7 +87,5 @@ description=[*]Gigamarts
 description=[/list]
 description=
 description=[h2]Info de la Workshop[/h2]
-description=Workshop ID: 3676050156
-description=Mod ID: BunkersAnywhereByZEnicko
 tags=Build 42;Building;Textures;WIP
 visibility=public
