@@ -2592,15 +2592,23 @@ local function isShippingCrateObject(obj)
     return containerType == "crate"
 end
 
+local function getShippingNeighborCoords(square)
+    local coords = {}
+    if not square then return coords end
+    for dx = -1, 1 do
+        for dy = -1, 1 do
+            if not (dx == 0 and dy == 0) then
+                coords[#coords + 1] = { square:getX() + dx, square:getY() + dy }
+            end
+        end
+    end
+    return coords
+end
+
 local function findAdjacentShippingCrate(square)
     if not square then return nil, nil end
     local z = square:getZ()
-    local coords = {
-        { square:getX() + 1, square:getY() },
-        { square:getX() - 1, square:getY() },
-        { square:getX(), square:getY() + 1 },
-        { square:getX(), square:getY() - 1 },
-    }
+    local coords = getShippingNeighborCoords(square)
     for _, pos in ipairs(coords) do
         local sq = getSquare(pos[1], pos[2], z)
         if sq then
@@ -2623,12 +2631,7 @@ local function findAdjacentShippingCrates(square)
     local results = {}
     if not square then return results end
     local z = square:getZ()
-    local coords = {
-        { square:getX() + 1, square:getY() },
-        { square:getX() - 1, square:getY() },
-        { square:getX(), square:getY() + 1 },
-        { square:getX(), square:getY() - 1 },
-    }
+    local coords = getShippingNeighborCoords(square)
     for _, pos in ipairs(coords) do
         local sq = getSquare(pos[1], pos[2], z)
         if sq then
@@ -2676,12 +2679,7 @@ local function removeAllItemsFromAdjacentShippingCrates(square)
     local payload = {}
     if not square then return payload end
     local z = square:getZ()
-    local coords = {
-        { square:getX() + 1, square:getY() },
-        { square:getX() - 1, square:getY() },
-        { square:getX(), square:getY() + 1 },
-        { square:getX(), square:getY() - 1 },
-    }
+    local coords = getShippingNeighborCoords(square)
     for _, pos in ipairs(coords) do
         local sq = getSquare(pos[1], pos[2], z)
         if sq then
