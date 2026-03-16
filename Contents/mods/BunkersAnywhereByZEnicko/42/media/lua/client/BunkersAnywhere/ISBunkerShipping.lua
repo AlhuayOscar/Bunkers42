@@ -1,7 +1,8 @@
 BunkersAnywhere = BunkersAnywhere or {}
 
 BunkersAnywhere.ShippingMailbox = BunkersAnywhere.ShippingMailbox or {
-    SpriteName = "trashcontainers_01_33",
+    SpriteName = "trashcontainers_01_32",
+    SpriteNameAlt = "trashcontainers_01_33",
     MaxCentralDistance = 20,
     Enabled = true,
 }
@@ -25,6 +26,24 @@ local function requestShippingStoreSync()
     if ModData and ModData.request and BunkersAnywhere and BunkersAnywhere.InvisibleCentralGenerator and BunkersAnywhere.InvisibleCentralGenerator.DataKey then
         ModData.request(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
     end
+    if sendClientCommand then
+        sendClientCommand("BunkersAnywhere", "RequestShippingDestinations", {})
+    end
+end
+
+local function getShippingPlayerIdentity(playerObj)
+    return {
+        username = (playerObj and playerObj.getUsername and playerObj:getUsername()) or "",
+        onlineID = (playerObj and playerObj.getOnlineID and playerObj:getOnlineID()) or -1,
+    }
+end
+
+local function isMyShippingDestination(dest, playerObj)
+    local identity = getShippingPlayerIdentity(playerObj)
+    if identity.onlineID ~= -1 and tonumber(dest.ownerOnlineID or -1) == identity.onlineID then
+        return true
+    end
+    return identity.username ~= "" and tostring(dest.ownerUsername or "") == identity.username
 end
 
 function BunkersAnywhere.isShippingMailboxTile(obj)
@@ -32,7 +51,8 @@ function BunkersAnywhere.isShippingMailboxTile(obj)
     if not obj or not obj.getSprite then return false end
     local sprite = obj:getSprite()
     if not sprite or not sprite.getName then return false end
-    return sprite:getName() == BunkersAnywhere.ShippingMailbox.SpriteName
+    local name = sprite:getName()
+    return name == BunkersAnywhere.ShippingMailbox.SpriteName or name == BunkersAnywhere.ShippingMailbox.SpriteNameAlt
 end
 
 function BunkersAnywhere.findNearestActiveCentralNodeKeyFromSquare(sq)
@@ -55,20 +75,25 @@ end
 
 function BunkersAnywhere.getActiveShippingDestinations(currentMailObj)
     local destinations = {}
+    local seen = {}
     local currentSq = currentMailObj and currentMailObj:getSquare() or nil
     local currentKey = currentSq and BunkersAnywhere.getInvisibleGeneratorNodeKey and BunkersAnywhere.getInvisibleGeneratorNodeKey(currentSq:getX(), currentSq:getY(), currentSq:getZ()) or nil
     requestShippingStoreSync()
     local store = BunkersAnywhere.getInvisibleGeneratorStore()
-    local mailboxes = store and store.mailboxes or nil
-    if mailboxes then
-        for key, mailbox in pairs(mailboxes) do
-            if mailbox and mailbox.active and key ~= currentKey then
+    local shippingDestinations = store and store.shippingDestinations or nil
+    if shippingDestinations then
+        for key, destination in pairs(shippingDestinations) do
+            if destination and key ~= currentKey then
                 table.insert(destinations, {
                     key = key,
-                    x = mailbox.x,
-                    y = mailbox.y,
-                    z = mailbox.z,
+                    x = destination.x,
+                    y = destination.y,
+                    z = destination.z,
+                    active = destination.active == true,
+                    ownerUsername = destination.ownerUsername or "",
+                    ownerOnlineID = destination.ownerOnlineID or -1,
                 })
+                seen[key] = true
             end
         end
     end
@@ -91,13 +116,17 @@ function BunkersAnywhere.getActiveShippingDestinations(currentMailObj)
                                     local md = obj.getModData and obj:getModData() or nil
                                     if md and md.baShippingMailboxActive == true then
                                         local key = BunkersAnywhere.getInvisibleGeneratorNodeKey and BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ()) or nil
-                                        if key ~= currentKey then
+                                        if key ~= currentKey and not seen[key] then
                                             table.insert(destinations, {
                                                 key = key,
                                                 x = sq:getX(),
                                                 y = sq:getY(),
                                                 z = sq:getZ(),
+                                                active = true,
+                                                ownerUsername = md.baShippingOwnerUsername or "",
+                                                ownerOnlineID = md.baShippingOwnerOnlineID or -1,
                                             })
+                                            seen[key] = true
                                         end
                                     end
                                 end
@@ -149,7 +178,14 @@ function BunkersAnywhere.activateShippingMailbox(mailObj, playerObj)
     if not sq then return end
     requestShippingStoreSync()
     if sendClientCommand then
-        sendClientCommand("BunkersAnywhere", "ActivateShippingMailbox", { x = sq:getX(), y = sq:getY(), z = sq:getZ() })
+        local identity = getShippingPlayerIdentity(playerObj)
+        sendClientCommand("BunkersAnywhere", "ActivateShippingMailbox", {
+            x = sq:getX(),
+            y = sq:getY(),
+            z = sq:getZ(),
+            username = identity.username,
+            onlineID = identity.onlineID,
+        })
     end
     playerObj:setHaloNote(bunkerText("IGUI_Bunker_MailActivated", "Activating shipping"), 0, 255, 100, 350)
 end
@@ -241,8 +277,19 @@ local function BunkersAnywhereShippingWorldContext(player, context, worldobjects
         local sub = context:addOption(bunkerText("ContextMenu_SendShippingMailbox", "Send shipping"))
         local subCtx = ISContextMenu:getNew(context)
         context:addSubMenu(sub, subCtx)
+        table.sort(destinations, function(a, b)
+            local aMine = isMyShippingDestination(a, playerObj)
+            local bMine = isMyShippingDestination(b, playerObj)
+            if aMine ~= bMine then
+                return aMine
+            end
+            if a.z ~= b.z then return a.z < b.z end
+            if a.x ~= b.x then return a.x < b.x end
+            return a.y < b.y
+        end)
         for _, dest in ipairs(destinations) do
-            local label = bunkerText("ContextMenu_SendShippingMailboxTo", "Send to: %s, %s, %s", tostring(dest.x), tostring(dest.y), tostring(dest.z))
+            local suffix = isMyShippingDestination(dest, playerObj) and " [Me]" or ""
+            local label = bunkerText("ContextMenu_SendShippingMailboxTo", "Send to: %s, %s, %s%s", tostring(dest.x), tostring(dest.y), tostring(dest.z), suffix)
             subCtx:addOption(label, mailObj, BunkersAnywhere.onSendShippingMailbox, playerObj, dest.x, dest.y, dest.z)
         end
     else
@@ -252,3 +299,4 @@ local function BunkersAnywhereShippingWorldContext(player, context, worldobjects
 end
 
 Events.OnFillWorldObjectContextMenu.Add(BunkersAnywhereShippingWorldContext)
+Events.OnGameStart.Add(requestShippingStoreSync)

@@ -49,6 +49,17 @@ module Base
         Weight = 40,
     }
 
+    item ShippingTerminal
+    {
+        Type = Moveable,
+        ItemType = base:moveable,
+        DisplayName = Shipping Terminal,
+        Icon = BunkerKit,
+        WorldObjectSprite = trashcontainers_01_32,
+        DisplayCategory = Household,
+        Weight = 18,
+    }
+
     item shipping_tile_01
     {
         ItemType = base:normal,

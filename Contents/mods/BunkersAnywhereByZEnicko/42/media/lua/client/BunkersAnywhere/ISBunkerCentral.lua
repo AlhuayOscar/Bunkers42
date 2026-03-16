@@ -578,6 +578,7 @@ function BunkersAnywhere.getInvisibleGeneratorStore()
     data.nodes = data.nodes or {}
     data.mailboxes = data.mailboxes or {}
     data.inboxes = data.inboxes or {}
+    data.shippingDestinations = data.shippingDestinations or {}
     return data
 end
 
@@ -2285,6 +2286,26 @@ local function BunkersAnywhereOnServerCommand(module, command, args)
         BunkersAnywhere.onServerCentralBatteryPayout(args or {})
     elseif command == "CentralUtilityItemPayout" then
         BunkersAnywhere.onServerCentralUtilityItemPayout(args or {})
+    elseif command == "ShippingDestinationsSync" then
+        local store = BunkersAnywhere.getInvisibleGeneratorStore()
+        store.shippingDestinations = {}
+        local list = args and args.destinations or nil
+        if list then
+            for i = 1, #list do
+                local entry = list[i]
+                if entry and entry.key then
+                    store.shippingDestinations[entry.key] = {
+                        x = entry.x,
+                        y = entry.y,
+                        z = entry.z,
+                        active = entry.active == true,
+                        centralKey = entry.centralKey,
+                        ownerUsername = entry.ownerUsername or "",
+                        ownerOnlineID = entry.ownerOnlineID or -1,
+                    }
+                end
+            end
+        end
     elseif command == "RefreshInvisibleGenerators" then
         BunkersAnywhere.refreshOwnedInvisibleGenerators()
     end

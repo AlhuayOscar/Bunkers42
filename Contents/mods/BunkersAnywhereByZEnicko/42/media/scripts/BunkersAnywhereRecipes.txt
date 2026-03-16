@@ -183,4 +183,25 @@ module Base
             item 1 Base.BunkerKit,
         }
     }
+
+    craftRecipe Craft Shipping Terminal
+    {
+        timedAction = DismantleElectrical,
+        Time = 180,
+        SkillRequired = Mechanics:1,
+        Tags = AnySurfaceCraft,
+        category = Metalworking,
+        xpAward = Mechanics:1,
+        inputs
+        {
+            item 6 [Base.SheetMetal] flags[NoBrokenItems],
+            item 4 [Base.MetalPipe] flags[NoBrokenItems],
+            item 4 [Base.ScrapMetal] flags[NoBrokenItems],
+            item 4 [Base.ElectronicsScrap] flags[NoBrokenItems],
+        }
+        outputs
+        {
+            item 1 Base.ShippingTerminal,
+        }
+    }
 }
