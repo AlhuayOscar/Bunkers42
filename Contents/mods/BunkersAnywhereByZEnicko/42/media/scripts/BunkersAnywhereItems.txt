@@ -29,7 +29,8 @@ module Base
 
     item ElectricCentral
     {
-        ItemType = base:Moveable,
+        Type = Moveable,
+        ItemType = base:moveable,
         DisplayName = Electric Central,
         Icon = Central,
         WorldObjectSprite = location_business_bank_01_68,
@@ -39,12 +40,33 @@ module Base
 
     item ElectricCentralNorth
     {
-        ItemType = base:Moveable,
+        Type = Moveable,
+        ItemType = base:moveable,
         DisplayName = Electric Central,
         Icon = Central,
         WorldObjectSprite = location_business_bank_01_69,
         DisplayCategory = Household,
         Weight = 40,
+    }
+
+    item shipping_tile_01
+    {
+        ItemType = base:normal,
+        DisplayName = Shipping Tile 01,
+        Icon = BunkerKit,
+        WorldObjectSprite = rooftop_furniture_2,
+        DisplayCategory = Household,
+        Weight = 15,
+    }
+
+    item shipping_tile_02
+    {
+        ItemType = base:normal,
+        DisplayName = Shipping Tile 02,
+        Icon = BunkerKit,
+        WorldObjectSprite = rooftop_furniture_3,
+        DisplayCategory = Household,
+        Weight = 15,
     }
 }
 

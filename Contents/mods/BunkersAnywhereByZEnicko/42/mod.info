@@ -2,4 +2,7 @@ name=Bunkers anywhere by ZEnicko
 id=BunkersAnywhereByZEnicko
 description=Teletransporte desde planta baja (Ground Floor) a sotano (Basement 1) sin escaleras, seguro contra zombies.
 poster=poster.png
+pack=tkTiles_01
 tiledef=ba_relay_generator 9415
+tiledef=tkTiles_01 830
+tiledef=militarylockerinteractable 923

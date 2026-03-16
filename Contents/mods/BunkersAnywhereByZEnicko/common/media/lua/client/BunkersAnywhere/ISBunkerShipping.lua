@@ -1,20 +1,38 @@
 BunkersAnywhere = BunkersAnywhere or {}
-require "ISUI/ISInventoryPaneContextMenu"
 
 BunkersAnywhere.ShippingMailbox = BunkersAnywhere.ShippingMailbox or {
-    SpriteName = "rooftop_furniture_3",
+    SpriteName = "trashcontainers_01_33",
     MaxCentralDistance = 20,
-    Enabled = false,
+    Enabled = true,
 }
+
+local function bunkerText(key, fallback, ...)
+    local text = getText(key, ...)
+    if text and text ~= key then
+        return text
+    end
+    if select("#", ...) > 0 then
+        return string.format(fallback, ...)
+    end
+    return fallback
+end
+
+local function getNoDestinationsLabel()
+    return bunkerText("ContextMenu_SendShippingMailboxNoDestinations", "Send shipping (no active destinations)")
+end
+
+local function requestShippingStoreSync()
+    if ModData and ModData.request and BunkersAnywhere and BunkersAnywhere.InvisibleCentralGenerator and BunkersAnywhere.InvisibleCentralGenerator.DataKey then
+        ModData.request(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
+    end
+end
 
 function BunkersAnywhere.isShippingMailboxTile(obj)
     if not BunkersAnywhere.ShippingMailbox.Enabled then return false end
     if not obj or not obj.getSprite then return false end
     local sprite = obj:getSprite()
     if not sprite or not sprite.getName then return false end
-    local name = sprite:getName()
-    if name == BunkersAnywhere.ShippingMailbox.SpriteName then return true end
-    return string.match(name or "", "^rooftop_furniture_.*_3$") ~= nil
+    return sprite:getName() == BunkersAnywhere.ShippingMailbox.SpriteName
 end
 
 function BunkersAnywhere.findNearestActiveCentralNodeKeyFromSquare(sq)
@@ -35,64 +53,118 @@ function BunkersAnywhere.findNearestActiveCentralNodeKeyFromSquare(sq)
     return bestKey
 end
 
-function BunkersAnywhere.findNearbyActiveMailbox(playerObj, radius)
-    local sq = playerObj and playerObj:getSquare()
-    if not sq then return nil end
-    local cell = getCell()
-    local px, py, pz = sq:getX(), sq:getY(), sq:getZ()
-    local r = radius or 1
-    for x = px - r, px + r do
-        for y = py - r, py + r do
-            local s = cell:getGridSquare(x, y, pz)
-            if s then
-                local objs = s:getObjects()
-                for i = 0, objs:size() - 1 do
-                    local o = objs:get(i)
-                    if BunkersAnywhere.isShippingMailboxTile(o) and o.getModData then
-                        local md = o:getModData()
-                        if md and md.baShippingMailboxActive then
-                            return o
+function BunkersAnywhere.getActiveShippingDestinations(currentMailObj)
+    local destinations = {}
+    local currentSq = currentMailObj and currentMailObj:getSquare() or nil
+    local currentKey = currentSq and BunkersAnywhere.getInvisibleGeneratorNodeKey and BunkersAnywhere.getInvisibleGeneratorNodeKey(currentSq:getX(), currentSq:getY(), currentSq:getZ()) or nil
+    requestShippingStoreSync()
+    local store = BunkersAnywhere.getInvisibleGeneratorStore()
+    local mailboxes = store and store.mailboxes or nil
+    if mailboxes then
+        for key, mailbox in pairs(mailboxes) do
+            if mailbox and mailbox.active and key ~= currentKey then
+                table.insert(destinations, {
+                    key = key,
+                    x = mailbox.x,
+                    y = mailbox.y,
+                    z = mailbox.z,
+                })
+            end
+        end
+    end
+
+    if #destinations == 0 and getCell then
+        local cell = getCell()
+        local player = getSpecificPlayer(0)
+        local psq = player and player.getSquare and player:getSquare() or nil
+        local pz = psq and psq:getZ() or nil
+        if cell and psq and pz ~= nil then
+            for x = psq:getX() - 40, psq:getX() + 40 do
+                for y = psq:getY() - 40, psq:getY() + 40 do
+                    local sq = cell:getGridSquare(x, y, pz)
+                    if sq then
+                        local objs = sq:getObjects()
+                        if objs then
+                            for i = 0, objs:size() - 1 do
+                                local obj = objs:get(i)
+                                if obj and obj ~= currentMailObj and BunkersAnywhere.isShippingMailboxTile(obj) then
+                                    local md = obj.getModData and obj:getModData() or nil
+                                    if md and md.baShippingMailboxActive == true then
+                                        local key = BunkersAnywhere.getInvisibleGeneratorNodeKey and BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ()) or nil
+                                        if key ~= currentKey then
+                                            table.insert(destinations, {
+                                                key = key,
+                                                x = sq:getX(),
+                                                y = sq:getY(),
+                                                z = sq:getZ(),
+                                            })
+                                        end
+                                    end
+                                end
+                            end
                         end
                     end
                 end
             end
         end
     end
-    return nil
+
+    table.sort(destinations, function(a, b)
+        if a.z ~= b.z then return a.z < b.z end
+        if a.x ~= b.x then return a.x < b.x end
+        return a.y < b.y
+    end)
+
+    return destinations
+end
+
+function BunkersAnywhere.getShippingMailboxState(mailObj)
+    local sq = mailObj and mailObj.getSquare and mailObj:getSquare() or nil
+    if not sq then
+        return { active = false, key = nil, centralKey = nil }
+    end
+
+    local key = BunkersAnywhere.getInvisibleGeneratorNodeKey and BunkersAnywhere.getInvisibleGeneratorNodeKey(sq:getX(), sq:getY(), sq:getZ()) or nil
+    requestShippingStoreSync()
+    local store = BunkersAnywhere.getInvisibleGeneratorStore()
+    local mailbox = key and store and store.mailboxes and store.mailboxes[key] or nil
+    if mailbox then
+        return {
+            active = mailbox.active == true,
+            key = key,
+            centralKey = mailbox.centralKey,
+        }
+    end
+
+    local md = mailObj.getModData and mailObj:getModData() or nil
+    return {
+        active = md and md.baShippingMailboxActive == true or false,
+        key = key,
+        centralKey = md and md.baShippingCentralKey or nil,
+    }
 end
 
 function BunkersAnywhere.activateShippingMailbox(mailObj, playerObj)
     local sq = mailObj and mailObj:getSquare()
     if not sq then return end
-    local centralKey = BunkersAnywhere.findNearestActiveCentralNodeKeyFromSquare(sq)
-    if not centralKey then
-        playerObj:setHaloNote(getText("IGUI_Bunker_MailNoCentralNearby"), 255, 80, 80, 400)
-        return
-    end
+    requestShippingStoreSync()
     if sendClientCommand then
         sendClientCommand("BunkersAnywhere", "ActivateShippingMailbox", { x = sq:getX(), y = sq:getY(), z = sq:getZ() })
     end
-    playerObj:setHaloNote(getText("IGUI_Bunker_MailActivated"), 0, 255, 100, 350)
+    playerObj:setHaloNote(bunkerText("IGUI_Bunker_MailActivated", "Activating shipping"), 0, 255, 100, 350)
 end
 
 function BunkersAnywhere.sendShippingMailbox(mailObj, playerObj, targetX, targetY, targetZ)
     local sq = mailObj and mailObj:getSquare()
     if not sq then return end
+    requestShippingStoreSync()
     if sendClientCommand then
         sendClientCommand("BunkersAnywhere", "SendShippingMailboxToCentral", {
             x = sq:getX(), y = sq:getY(), z = sq:getZ(),
             tx = targetX, ty = targetY, tz = targetZ,
         })
     end
-    playerObj:setHaloNote(getText("IGUI_Bunker_MailSentTo", tostring(targetX), tostring(targetY), tostring(targetZ)), 80, 220, 255, 350)
-end
-
-function BunkersAnywhere.withdrawShippingMailbox(mailObj, playerObj)
-    local sq = mailObj and mailObj:getSquare()
-    if not sq then return end
-    if sendClientCommand then
-        sendClientCommand("BunkersAnywhere", "WithdrawShippingMailbox", { x = sq:getX(), y = sq:getY(), z = sq:getZ() })
-    end
+    playerObj:setHaloNote(bunkerText("IGUI_Bunker_MailSentTo", "Sent to %s, %s, %s", tostring(targetX), tostring(targetY), tostring(targetZ)), 80, 220, 255, 350)
 end
 
 function BunkersAnywhere.onActivateShippingMailbox(mailObj, playerObj)
@@ -106,77 +178,6 @@ function BunkersAnywhere.onSendShippingMailbox(mailObj, playerObj, targetX, targ
         ISTimedActionQueue.add(ISBunkerAction:new(playerObj, mailObj:getSquare(), 130, "Loot", "LightSwitch", BunkersAnywhere.sendShippingMailbox, mailObj, playerObj, targetX, targetY, targetZ))
     end
 end
-
-function BunkersAnywhere.onWithdrawShippingMailbox(mailObj, playerObj)
-    if luautils.walk(playerObj, mailObj:getSquare()) then
-        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, mailObj:getSquare(), 80, "Loot", "LightSwitch", BunkersAnywhere.withdrawShippingMailbox, mailObj, playerObj))
-    end
-end
-
-function BunkersAnywhere.depositSelectedItemsToMailbox(items, playerObj, mailObj)
-    if not mailObj or not mailObj.getModData then return end
-    local md = mailObj:getModData()
-    if not (md and md.baShippingMailboxActive) then return end
-
-    local payload = {}
-    local payloadCount = 0
-    local inv = playerObj:getInventory()
-
-    for _, itemGroup in ipairs(items) do
-        if instanceof(itemGroup, "InventoryItem") then
-            local item = itemGroup
-            payload[item:getFullType()] = (payload[item:getFullType()] or 0) + 1
-            payloadCount = payloadCount + 1
-        else
-            for _, item in ipairs(itemGroup.items) do
-                payload[item:getFullType()] = (payload[item:getFullType()] or 0) + 1
-                payloadCount = payloadCount + 1
-            end
-        end
-    end
-
-    local capacity = tonumber(md.baShippingMailboxCapacity) or 100
-    local current = tonumber(md.baShippingMailboxCount) or 0
-    if current + payloadCount > capacity then
-        playerObj:setHaloNote(getText("IGUI_Bunker_MailboxFull", tostring(capacity)), 255, 80, 80, 350)
-        return
-    end
-
-    for _, itemGroup in ipairs(items) do
-        if instanceof(itemGroup, "InventoryItem") then
-            inv:Remove(itemGroup)
-        else
-            for _, item in ipairs(itemGroup.items) do
-                inv:Remove(item)
-            end
-        end
-    end
-
-    local sq = mailObj:getSquare()
-    if sendClientCommand then
-        sendClientCommand("BunkersAnywhere", "DepositShippingMailbox", {
-            x = sq:getX(), y = sq:getY(), z = sq:getZ(), items = payload
-        })
-    end
-    playerObj:setHaloNote(getText("IGUI_Bunker_MailDeposited"), 0, 220, 255, 300)
-end
-
-function BunkersAnywhere.onDepositSelectedItemsToMailbox(items, playerObj, mailObj)
-    ISTimedActionQueue.add(ISBunkerAction:new(playerObj, playerObj:getSquare(), 70, "Loot", nil, BunkersAnywhere.depositSelectedItemsToMailbox, items, playerObj, mailObj))
-end
-
-local function BunkersAnywhereShippingInventoryContext(player, context, items)
-    if not BunkersAnywhere.ShippingMailbox.Enabled then return end
-    local playerObj = getSpecificPlayer(player)
-    if not playerObj then return end
-
-    local mailObj = BunkersAnywhere.findNearbyActiveMailbox(playerObj, 1)
-    if mailObj then
-        context:addOption(getText("ContextMenu_DepositToShippingMailbox"), items, BunkersAnywhere.onDepositSelectedItemsToMailbox, playerObj, mailObj)
-    end
-end
-
-Events.OnFillInventoryObjectContextMenu.Add(BunkersAnywhereShippingInventoryContext)
 
 local function BunkersAnywhereShippingWorldContext(player, context, worldobjects, test)
     if not BunkersAnywhere.ShippingMailbox.Enabled then return end
@@ -201,48 +202,52 @@ local function BunkersAnywhereShippingWorldContext(player, context, worldobjects
     if worldobjects.size and worldobjects.get then
         for i = 0, worldobjects:size() - 1 do
             local wo = worldobjects:get(i)
-            local sq = wo and wo.getSquare and wo:getSquare() or nil
-            scanSquareObjects(sq)
+            if not mailObj and BunkersAnywhere.isShippingMailboxTile(wo) then
+                mailObj = wo
+                break
+            end
+            scanSquareObjects(wo and wo.getSquare and wo:getSquare() or nil)
             if mailObj then break end
         end
     else
         for _, wo in ipairs(worldobjects) do
-            local sq = wo and wo.getSquare and wo:getSquare() or nil
-            scanSquareObjects(sq)
+            if not mailObj and BunkersAnywhere.isShippingMailboxTile(wo) then
+                mailObj = wo
+                break
+            end
+            scanSquareObjects(wo and wo.getSquare and wo:getSquare() or nil)
             if mailObj then break end
         end
     end
 
-    if not mailObj then
-        scanSquareObjects(playerObj:getSquare())
-    end
     if not mailObj then return end
 
-    if mailObj.getModData then
-        local mdMail = mailObj:getModData()
-        if not (mdMail and mdMail.baShippingMailboxActive) then
-            local nearKey = BunkersAnywhere.findNearestActiveCentralNodeKeyFromSquare(mailObj:getSquare())
-            local option = context:addOption(getText("ContextMenu_ActivateShippingMailbox"), mailObj, BunkersAnywhere.onActivateShippingMailbox, playerObj)
-            if not nearKey then option.notAvailable = true end
-        else
-            context:addOption(getText("ContextMenu_WithdrawFromShippingMailbox"), mailObj, BunkersAnywhere.onWithdrawShippingMailbox, playerObj)
+    local sq = mailObj.getSquare and mailObj:getSquare() or nil
+    local sx = sq and sq:getX() or "?"
+    local sy = sq and sq:getY() or "?"
+    local sz = sq and sq:getZ() or "?"
+    print("[BunkersAnywhere][ShippingClientDebug] context mailbox at " .. tostring(sx) .. "," .. tostring(sy) .. "," .. tostring(sz))
 
-            local cKey = mdMail.baShippingCentralKey
-            local store = BunkersAnywhere.getInvisibleGeneratorStore()
-            local cNode = cKey and store.nodes[cKey] or nil
-            if cNode and cNode.links then
-                local sub = context:addOption(getText("ContextMenu_SendShippingMailbox"))
-                local subCtx = ISContextMenu:getNew(context)
-                context:addSubMenu(sub, subCtx)
-                for linkedKey, enabled in pairs(cNode.links) do
-                    if enabled and store.nodes[linkedKey] then
-                        local ln = store.nodes[linkedKey]
-                        local label = getText("ContextMenu_SendShippingMailboxTo", tostring(ln.x), tostring(ln.y), tostring(ln.z))
-                        subCtx:addOption(label, mailObj, BunkersAnywhere.onSendShippingMailbox, playerObj, ln.x, ln.y, ln.z)
-                    end
-                end
-            end
+    local mailboxState = BunkersAnywhere.getShippingMailboxState(mailObj)
+    if not mailboxState.active then
+        print("[BunkersAnywhere][ShippingClientDebug] mailbox inactive")
+        context:addOption(bunkerText("ContextMenu_ActivateShippingMailbox", "Activate shipping"), mailObj, BunkersAnywhere.onActivateShippingMailbox, playerObj)
+        return
+    end
+
+    local destinations = BunkersAnywhere.getActiveShippingDestinations(mailObj)
+    print("[BunkersAnywhere][ShippingClientDebug] mailbox active destinations=" .. tostring(#destinations))
+    if #destinations > 0 then
+        local sub = context:addOption(bunkerText("ContextMenu_SendShippingMailbox", "Send shipping"))
+        local subCtx = ISContextMenu:getNew(context)
+        context:addSubMenu(sub, subCtx)
+        for _, dest in ipairs(destinations) do
+            local label = bunkerText("ContextMenu_SendShippingMailboxTo", "Send to: %s, %s, %s", tostring(dest.x), tostring(dest.y), tostring(dest.z))
+            subCtx:addOption(label, mailObj, BunkersAnywhere.onSendShippingMailbox, playerObj, dest.x, dest.y, dest.z)
         end
+    else
+        local sub = context:addOption(getNoDestinationsLabel())
+        sub.notAvailable = true
     end
 end
 

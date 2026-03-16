@@ -18,8 +18,8 @@ local CFG = {
     LoadedPowerTickInterval = 10,
     LoadedPowerScanRange = 55,
     LoadedPowerRescanStep = 8,
-    EnableShipping = false,
-    MailboxSpriteName = "rooftop_furniture_3",
+    EnableShipping = true,
+    MailboxSpriteName = "trashcontainers_01_33",
     MaxMailboxCentralDistance = 20,
     MailboxCapacity = 100,
     CentralEnergyMax = 100,
@@ -63,8 +63,7 @@ end
 
 local function isMailboxSpriteName(spriteName)
     if not spriteName then return false end
-    if spriteName == CFG.MailboxSpriteName then return true end
-    return string.match(spriteName, "^rooftop_furniture_.*_3$") ~= nil
+    return spriteName == CFG.MailboxSpriteName
 end
 
 local function getStore()
@@ -1898,11 +1897,12 @@ local function findNearestActiveCentralNodeKeyFromSquare(square)
     local sz = square:getZ()
 
     for key, node in pairs(store.nodes) do
-        if node and effective[key] and node.z == sz then
+        if node and effective[key] and math.abs((node.z or 0) - sz) <= math.max(0, math.floor(tonumber(CFG.GeneratorVertical) or 0)) then
             local dx = node.x - sx
             local dy = node.y - sy
             local dist = math.sqrt(dx * dx + dy * dy)
-            if dist <= CFG.MaxMailboxCentralDistance and dist < bestDist then
+            local maxDist = math.max(tonumber(CFG.MaxMailboxCentralDistance) or 0, tonumber(CFG.GeneratorRadius) or 0)
+            if dist <= maxDist and dist < bestDist then
                 bestDist = dist
                 bestKey = key
             end
@@ -2588,7 +2588,10 @@ local function activateMailboxAt(x, y, z)
     if not hasMailbox then return false end
 
     local centralKey = findNearestActiveCentralNodeKeyFromSquare(square)
-    if not centralKey then return false end
+    if not centralKey then
+        print("[BunkersAnywhere][ShippingDebug] activateMailboxAt no active central found for mailbox at " .. tostring(x) .. "," .. tostring(y) .. "," .. tostring(z))
+        return false
+    end
 
     local store = getStore()
     local key = getNodeKey(x, y, z)
@@ -2613,77 +2616,291 @@ local function activateMailboxAt(x, y, z)
         end
     end
 
+    print("[BunkersAnywhere][ShippingDebug] activateMailboxAt linked mailbox " .. tostring(key) .. " to central " .. tostring(centralKey))
     transmitStore()
     return true
 end
 
 local function depositMailboxAt(x, y, z, payload)
-    if not CFG.EnableShipping then return false end
-    local key = getNodeKey(x, y, z)
-    local store = getStore()
-    local mailbox = store.mailboxes[key]
-    if not mailbox or not mailbox.active then return false end
+    return false
+end
 
-    mailbox.capacity = mailbox.capacity or CFG.MailboxCapacity
-    mailbox.items = mailbox.items or {}
-    local currentCount = getItemsMapCount(mailbox.items)
-    local incoming = getItemsMapCount(payload)
-    if incoming <= 0 then return false end
-    if currentCount + incoming > mailbox.capacity then
-        return false
+local function isShippingCrateSpriteName(spriteName)
+    return spriteName == "carpentry_01_9" or spriteName == "carpentry_01_09"
+end
+
+local function isShippingCrateObject(obj)
+    if not obj then return false end
+    local sprite = obj.getSprite and obj:getSprite() or nil
+    local spriteName = sprite and sprite.getName and sprite:getName() or nil
+    if isShippingCrateSpriteName(spriteName) then
+        return true
     end
-    mergeItemsMap(mailbox.items, payload)
+    local container = obj.getContainer and obj:getContainer() or obj:getItemContainer()
+    local containerType = container and container.getType and container:getType() or nil
+    return containerType == "crate"
+end
 
-    local square = getSquare(x, y, z)
-    local hasMailbox, mailboxObj = hasMailboxOnSquare(square)
-    if hasMailbox and mailboxObj and mailboxObj.getModData then
-        local md = mailboxObj:getModData()
-        md.baShippingMailboxCapacity = mailbox.capacity
-        md.baShippingMailboxCount = getItemsMapCount(mailbox.items)
-        if mailboxObj.transmitModData then
-            mailboxObj:transmitModData()
+local function findAdjacentShippingCrate(square)
+    if not square then return nil, nil end
+    local z = square:getZ()
+    local coords = {
+        { square:getX() + 1, square:getY() },
+        { square:getX() - 1, square:getY() },
+        { square:getX(), square:getY() + 1 },
+        { square:getX(), square:getY() - 1 },
+    }
+    for _, pos in ipairs(coords) do
+        local sq = getSquare(pos[1], pos[2], z)
+        if sq then
+            local objs = sq:getObjects()
+            for i = 0, objs:size() - 1 do
+                local obj = objs:get(i)
+                if isShippingCrateObject(obj) then
+                    local container = obj.getContainer and obj:getContainer() or obj:getItemContainer()
+                    if container then
+                        return obj, container
+                    end
+                end
+            end
+        end
+    end
+    return nil, nil
+end
+
+local function findAdjacentShippingCrates(square)
+    local results = {}
+    if not square then return results end
+    local z = square:getZ()
+    local coords = {
+        { square:getX() + 1, square:getY() },
+        { square:getX() - 1, square:getY() },
+        { square:getX(), square:getY() + 1 },
+        { square:getX(), square:getY() - 1 },
+    }
+    for _, pos in ipairs(coords) do
+        local sq = getSquare(pos[1], pos[2], z)
+        if sq then
+            local objs = sq:getObjects()
+            for i = 0, objs:size() - 1 do
+                local obj = objs:get(i)
+                if isShippingCrateObject(obj) then
+                    local container = obj.getContainer and obj:getContainer() or obj:getItemContainer()
+                    if container then
+                        results[#results + 1] = {
+                            object = obj,
+                            container = container,
+                            square = sq,
+                        }
+                    end
+                end
+            end
+        end
+    end
+    return results
+end
+
+local function removeAllItemsFromContainer(container)
+    local payload = {}
+    if not container or not container.getItems then return payload end
+    local items = container:getItems()
+    for i = items:size() - 1, 0, -1 do
+        local item = items:get(i)
+        local fullType = item and item.getFullType and item:getFullType() or nil
+        if fullType and fullType ~= "" then
+            payload[fullType] = (payload[fullType] or 0) + 1
+        end
+        if item then
+            if container.DoRemoveItem then
+                container:DoRemoveItem(item)
+            else
+                container:Remove(item)
+            end
+        end
+    end
+    return payload
+end
+
+local function removeAllItemsFromAdjacentShippingCrates(square)
+    local payload = {}
+    if not square then return payload end
+    local z = square:getZ()
+    local coords = {
+        { square:getX() + 1, square:getY() },
+        { square:getX() - 1, square:getY() },
+        { square:getX(), square:getY() + 1 },
+        { square:getX(), square:getY() - 1 },
+    }
+    for _, pos in ipairs(coords) do
+        local sq = getSquare(pos[1], pos[2], z)
+        if sq then
+            local objs = sq:getObjects()
+            for i = 0, objs:size() - 1 do
+                local obj = objs:get(i)
+                if isShippingCrateObject(obj) then
+                    local container = obj.getContainer and obj:getContainer() or obj:getItemContainer()
+                    if container then
+                        mergeItemsMap(payload, removeAllItemsFromContainer(container))
+                    end
+                end
+            end
+        end
+    end
+    return payload
+end
+
+local function removeWorldItemsFromSquare(square)
+    local payload = {}
+    if not square or not square.getWorldObjects then return payload end
+    local worldObjects = square:getWorldObjects()
+    if not worldObjects then return payload end
+
+    for i = worldObjects:size() - 1, 0, -1 do
+        local worldObj = worldObjects:get(i)
+        local item = worldObj and worldObj.getItem and worldObj:getItem() or nil
+        local fullType = item and item.getFullType and item:getFullType() or nil
+        if fullType and fullType ~= "" then
+            payload[fullType] = (payload[fullType] or 0) + 1
+        end
+
+        if worldObj then
+            if square.transmitRemoveItemFromSquare then
+                square:transmitRemoveItemFromSquare(worldObj)
+            elseif worldObj.removeFromWorld then
+                worldObj:removeFromWorld()
+            end
         end
     end
 
-    transmitStore()
-    return true
+    return payload
+end
+
+local function addPayloadToContainerOrGround(payload, targetContainers, targetSquare)
+    local movedAny = false
+    local containers = {}
+    if type(targetContainers) == "table" then
+        containers = targetContainers
+    elseif targetContainers then
+        containers = { targetContainers }
+    end
+
+    for fullType, count in pairs(payload or {}) do
+        local n = math.floor(tonumber(count) or 0)
+        while n > 0 do
+            local item = instanceItem(fullType)
+            local storedInContainer = false
+
+            if #containers > 0 then
+                for _, container in ipairs(containers) do
+                    if item and container and container.AddItem then
+                        container:AddItem(item)
+                        storedInContainer = true
+                        break
+                    elseif (not item) and container and container.AddItem then
+                        container:AddItem(fullType)
+                        storedInContainer = true
+                        break
+                    end
+                end
+            end
+
+            if not storedInContainer and item and targetSquare and targetSquare.AddWorldInventoryItem then
+                targetSquare:AddWorldInventoryItem(item, 0.5, 0.5, 0.0, true, true)
+            elseif not storedInContainer and targetSquare and targetSquare.AddWorldInventoryItem then
+                targetSquare:AddWorldInventoryItem(fullType, 0.5, 0.5, 0.0, true, true)
+            elseif not storedInContainer then
+                print("[BunkersAnywhere][ShippingDebug] addPayloadToContainerOrGround failed for " .. tostring(fullType))
+                break
+            end
+            movedAny = true
+            n = n - 1
+        end
+    end
+    if movedAny and targetSquare and targetSquare.RecalcProperties then
+        targetSquare:RecalcProperties()
+    end
+    return movedAny
 end
 
 local function sendMailboxToCentral(x, y, z, tx, ty, tz)
     if not CFG.EnableShipping then return false end
+    print("[BunkersAnywhere][ShippingDebug] sendMailboxToCentral from " .. tostring(x) .. "," .. tostring(y) .. "," .. tostring(z) .. " to " .. tostring(tx) .. "," .. tostring(ty) .. "," .. tostring(tz))
     local store = getStore()
     local effective = getNetworkState(store)
     local mailKey = getNodeKey(x, y, z)
     local mailbox = store.mailboxes[mailKey]
-    if not mailbox or not mailbox.active then return false end
+    if not mailbox or not mailbox.active then
+        print("[BunkersAnywhere][ShippingDebug] source mailbox inactive or missing, trying to reactivate")
+        activateMailboxAt(x, y, z)
+        store = getStore()
+        effective = getNetworkState(store)
+        mailbox = store.mailboxes[mailKey]
+        if mailbox and mailbox.active then
+            print("[BunkersAnywhere][ShippingDebug] source mailbox reactivated on send")
+        else
+            print("[BunkersAnywhere][ShippingDebug] source mailbox inactive or missing")
+            return false
+        end
+    end
     local sourceCentralKey = mailbox.centralKey
     local sourceCentral = sourceCentralKey and store.nodes[sourceCentralKey] or nil
-    if not sourceCentral or not effective[sourceCentralKey] then return false end
-
-    local targetCentralKey = getNodeKey(tx, ty, tz)
-    local targetCentral = store.nodes[targetCentralKey]
-    if not targetCentral or not effective[targetCentralKey] then return false end
-
-    if not (sourceCentral.links and sourceCentral.links[targetCentralKey]) then
+    if not sourceCentral or not effective[sourceCentralKey] then
+        print("[BunkersAnywhere][ShippingDebug] source central inactive or missing")
         return false
     end
 
-    mailbox.items = mailbox.items or {}
-    local hasAny = false
-    for _, count in pairs(mailbox.items) do
-        if (tonumber(count) or 0) > 0 then
-            hasAny = true
-            break
+    local targetMailKey = getNodeKey(tx, ty, tz)
+    local targetMailbox = store.mailboxes[targetMailKey]
+    if not targetMailbox or not targetMailbox.active then
+        print("[BunkersAnywhere][ShippingDebug] target mailbox inactive or missing, trying to reactivate")
+        activateMailboxAt(tx, ty, tz)
+        store = getStore()
+        effective = getNetworkState(store)
+        targetMailbox = store.mailboxes[targetMailKey]
+        if targetMailbox and targetMailbox.active then
+            print("[BunkersAnywhere][ShippingDebug] target mailbox reactivated on send")
+        else
+            print("[BunkersAnywhere][ShippingDebug] target mailbox inactive or missing")
+            return false
         end
     end
-    if not hasAny then return false end
+    local targetCentralKey = targetMailbox.centralKey
+    local targetCentral = targetCentralKey and store.nodes[targetCentralKey] or nil
+    if not targetCentral or not effective[targetCentralKey] then
+        print("[BunkersAnywhere][ShippingDebug] target central inactive or missing")
+        return false
+    end
 
-    store.inboxes[targetCentralKey] = store.inboxes[targetCentralKey] or {}
-    mergeItemsMap(store.inboxes[targetCentralKey], mailbox.items)
-    clearItemsMap(mailbox.items)
+    local sourceSquare = getSquare(x, y, z)
+    local targetSquare = getSquare(targetMailbox.x, targetMailbox.y, targetMailbox.z)
+    if not sourceSquare or not targetSquare then
+        print("[BunkersAnywhere][ShippingDebug] source or target square missing")
+        return false
+    end
 
-    local square = getSquare(x, y, z)
-    local hasMailbox, mailboxObj = hasMailboxOnSquare(square)
+    local payload = {}
+    local cratePayload = removeAllItemsFromAdjacentShippingCrates(sourceSquare)
+    local floorPayload = removeWorldItemsFromSquare(sourceSquare)
+    mergeItemsMap(payload, cratePayload)
+    mergeItemsMap(payload, floorPayload)
+    print("[BunkersAnywhere][ShippingDebug] source payload crate=" .. tostring(getItemsMapCount(cratePayload)) .. " floor=" .. tostring(getItemsMapCount(floorPayload)))
+    if getItemsMapCount(payload) <= 0 then
+        print("[BunkersAnywhere][ShippingDebug] source crate/floor empty")
+        return false
+    end
+
+    local targetCrates = findAdjacentShippingCrates(targetSquare)
+    local targetContainers = {}
+    for _, info in ipairs(targetCrates) do
+        targetContainers[#targetContainers + 1] = info.container
+    end
+    if not addPayloadToContainerOrGround(payload, targetContainers, targetSquare) then
+        print("[BunkersAnywhere][ShippingDebug] payload add failed")
+        return false
+    end
+    print("[BunkersAnywhere][ShippingDebug] payload moved targetContainers=" .. tostring(#targetContainers))
+
+    local hasMailbox, mailboxObj = hasMailboxOnSquare(sourceSquare)
     if hasMailbox and mailboxObj and mailboxObj.getModData then
         local md = mailboxObj:getModData()
         md.baShippingMailboxCount = 0
@@ -2692,7 +2909,19 @@ local function sendMailboxToCentral(x, y, z, tx, ty, tz)
         end
     end
 
+    local hasTargetMailbox, targetMailboxObj = hasMailboxOnSquare(targetSquare)
+    if hasTargetMailbox and targetMailboxObj and targetMailboxObj.getModData then
+        local md = targetMailboxObj:getModData()
+        md.baShippingMailboxActive = true
+        md.baShippingCentralKey = targetMailbox.centralKey
+        md.baShippingMailboxCount = getItemsMapCount(payload)
+        if targetMailboxObj.transmitModData then
+            targetMailboxObj:transmitModData()
+        end
+    end
+
     transmitStore()
+
     return true
 end
 
@@ -2702,6 +2931,20 @@ local function giveItemToPlayer(player, fullType)
     if not inv then return false end
     local item = inv:AddItem(fullType)
     return item ~= nil
+end
+
+local function giveCentralUtilityItemToPlayer(player, fullType)
+    if not player or not fullType or fullType == "" then return false end
+    if fullType ~= "Base.shipping_tile_01" and fullType ~= "Base.shipping_tile_02" then
+        return false
+    end
+    if sendServerCommand then
+        sendServerCommand(player, "BunkersAnywhere", "CentralUtilityItemPayout", {
+            fullType = tostring(fullType),
+        })
+        return true
+    end
+    return giveItemToPlayer(player, fullType)
 end
 
 local function withdrawMailboxAt(x, y, z, player)
@@ -2920,6 +3163,8 @@ local function onClientCommand(module, command, player, args)
         if CFG.EnableCentralRadiusUpgrade == true then
             upgradeCentralRadiusAt(tonumber(args.x), tonumber(args.y), tonumber(args.z), actor, args)
         end
+    elseif command == "GiveCentralUtilityItem" then
+        giveCentralUtilityItemToPlayer(actor, tostring(args.fullType or ""))
     elseif BunkersAnywhereShipping.handleClientCommand(command, actor, args) then
         return
     elseif command == "ConsumeBunkerKit" then

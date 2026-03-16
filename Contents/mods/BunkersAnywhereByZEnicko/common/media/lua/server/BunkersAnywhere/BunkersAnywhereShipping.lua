@@ -17,23 +17,22 @@ function Shipping.syncMailboxes(effective)
 
     for key, mailbox in pairs(store.mailboxes) do
         local square = mailbox and getSquare(mailbox.x, mailbox.y, mailbox.z) or nil
-        local hasMailbox, mailboxObj = square and H.hasMailboxOnSquare(square) or false, nil
-        if square then
-            hasMailbox, mailboxObj = H.hasMailboxOnSquare(square)
+        local centralExists = mailbox.centralKey and store.nodes[mailbox.centralKey] and effective[mailbox.centralKey]
+        local previousActive = mailbox.active == true
+        mailbox.active = centralExists and true or false
+        if previousActive ~= (mailbox.active == true) then
+            changed = true
         end
 
-        if not hasMailbox then
-            store.mailboxes[key] = nil
-            changed = true
+        if not square then
+            print("[BunkersAnywhere][ShippingDebug] syncMailboxes keeping mailbox " .. tostring(key) .. " while square is not loaded")
         else
-            local centralExists = mailbox.centralKey and store.nodes[mailbox.centralKey] and effective[mailbox.centralKey]
-            local previousActive = mailbox.active == true
-            mailbox.active = centralExists and true or false
-            if previousActive ~= (mailbox.active == true) then
+            local hasMailbox, mailboxObj = H.hasMailboxOnSquare(square)
+            if not hasMailbox then
+                print("[BunkersAnywhere][ShippingDebug] syncMailboxes removing mailbox " .. tostring(key) .. " because sprite is missing on loaded square")
+                store.mailboxes[key] = nil
                 changed = true
-            end
-
-            if mailboxObj and mailboxObj.getModData then
+            elseif mailboxObj and mailboxObj.getModData then
                 local md = mailboxObj:getModData()
                 md.baShippingMailboxActive = mailbox.active
                 md.baShippingCentralKey = mailbox.centralKey
