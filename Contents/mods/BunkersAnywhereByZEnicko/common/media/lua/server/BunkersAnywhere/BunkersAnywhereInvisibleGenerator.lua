@@ -1,4 +1,5 @@
 BunkersAnywhere = BunkersAnywhere or {}
+require "BunkersAnywhere/BunkersAnywhereShipping"
 
 local CFG = {
     DataKey = "BunkersAnywhereInvisibleCentralGenerators",
@@ -7,7 +8,7 @@ local CFG = {
     ZLevel = -1,
     GeneratorRadius = 100,
     VanillaGeneratorRadius = 20,
-    DebugRadiusLogs = true,
+    DebugRadiusLogs = false,
     GeneratorRadiusUpgradeBonus = 25,
     GeneratorRadiusUpgradeWireCost = 50,
     GeneratorRadiusUpgradeBonuses = { 25 },
@@ -16,6 +17,7 @@ local CFG = {
     GeneratorVertical = 3,
     LoadedPowerTickInterval = 10,
     LoadedPowerScanRange = 55,
+    LoadedPowerRescanStep = 8,
     EnableShipping = false,
     MailboxSpriteName = "rooftop_furniture_3",
     MaxMailboxCentralDistance = 20,
@@ -1140,6 +1142,10 @@ forceNoToxic = function(square)
 end
 
 local _baNoToxicTick = 0
+local _baPlayerAreaScanVersion
+local _baNoToxicPlayerState
+local getPlayerStateKey
+local getScanBucket
 local function maintainNoToxicAroundPlayers()
     _baNoToxicTick = _baNoToxicTick + 1
     if _baNoToxicTick < 3 then return end
@@ -1176,9 +1182,33 @@ local function maintainNoToxicAroundPlayers()
         -- Always clear the building the player is currently in.
         forceNoToxic(sq)
 
+        local px, py, pz = sq:getX(), sq:getY(), sq:getZ()
+        local playerKey = getPlayerStateKey(player)
+        local bucketX = getScanBucket(px, 4)
+        local bucketY = getScanBucket(py, 4)
+        local state = playerKey and _baNoToxicPlayerState[playerKey] or nil
+        if state
+            and state.version == _baPlayerAreaScanVersion
+            and state.bx == bucketX
+            and state.by == bucketY
+            and state.bz == pz
+            and (tonumber(state.cooldown) or 0) > 0
+        then
+            state.cooldown = (tonumber(state.cooldown) or 0) - 1
+            return
+        end
+        if playerKey then
+            _baNoToxicPlayerState[playerKey] = {
+                version = _baPlayerAreaScanVersion,
+                bx = bucketX,
+                by = bucketY,
+                bz = pz,
+                cooldown = 10,
+            }
+        end
+
         -- Also clear nearby loaded squares so upper floors / basement-adjacent
         -- rooms don't briefly flip back to toxic while the player moves.
-        local px, py, pz = sq:getX(), sq:getY(), sq:getZ()
         for x = px - 8, px + 8 do
             for y = py - 8, py + 8 do
                 for z = pz - 2, pz + 2 do
@@ -1353,6 +1383,35 @@ local function collectWantedPowerNodes(store, effective)
 end
 
 local _baLastRadiusDebugSignatureByKey = {}
+_baPlayerAreaScanVersion = 0
+local _baLoadedPowerPlayerState = {}
+_baNoToxicPlayerState = {}
+
+local function invalidatePlayerAreaScans()
+    _baPlayerAreaScanVersion = _baPlayerAreaScanVersion + 1
+end
+
+getPlayerStateKey = function(player)
+    if not player then return nil end
+    if player.getOnlineID then
+        local ok, id = pcall(function() return tonumber(player:getOnlineID()) or -1 end)
+        if ok and id and id >= 0 then
+            return "id:" .. tostring(id)
+        end
+    end
+    if player.getUsername then
+        local ok, username = pcall(function() return player:getUsername() end)
+        if ok and username and username ~= "" then
+            return "user:" .. tostring(username)
+        end
+    end
+    return tostring(player)
+end
+
+getScanBucket = function(value, step)
+    local bucketStep = math.max(1, math.floor(tonumber(step) or 1))
+    return math.floor((tonumber(value) or 0) / bucketStep)
+end
 local function logCentralRadiusIfChanged(key, node, wantOn, providerCount)
     if CFG.DebugRadiusLogs ~= true then return end
     if not key or not node then return end
@@ -1444,6 +1503,7 @@ local function applyNetworkPower(store)
     end
     syncNodeRelayMeshes(store, effective)
     broadcastOwnedGeneratorRefresh()
+    invalidatePlayerAreaScans()
     return effective, providers
 end
 
@@ -1672,14 +1732,38 @@ local function maintainLoadedBasementPowerAroundPlayers()
 
     local effective = getNetworkState(store)
     local activeNodes = collectActivePowerNodes(store, effective)
+    if #activeNodes <= 0 then return end
     local range = math.max(10, math.floor(tonumber(CFG.LoadedPowerScanRange) or 55))
+    local range2 = range * range
+    local vertical = math.max(0, math.floor(tonumber(CFG.GeneratorVertical) or 0))
+    local rescanStep = math.max(1, math.floor(tonumber(CFG.LoadedPowerRescanStep) or 8))
 
     forEachOnlinePlayerSafe(function(player)
         local sq = player and player.getSquare and player:getSquare() or nil
         if not sq then return end
         local px, py, pz = sq:getX(), sq:getY(), sq:getZ()
+        local playerKey = getPlayerStateKey(player)
+        local bucketX = getScanBucket(px, rescanStep)
+        local bucketY = getScanBucket(py, rescanStep)
+        local state = playerKey and _baLoadedPowerPlayerState[playerKey] or nil
+        if state
+            and state.version == _baPlayerAreaScanVersion
+            and state.bx == bucketX
+            and state.by == bucketY
+            and state.bz == pz
+        then
+            return
+        end
+        if playerKey then
+            _baLoadedPowerPlayerState[playerKey] = {
+                version = _baPlayerAreaScanVersion,
+                bx = bucketX,
+                by = bucketY,
+                bz = pz,
+            }
+        end
+
         local nodesNearPlayerZ = {}
-        local vertical = math.max(0, math.floor(tonumber(CFG.GeneratorVertical) or 0))
         for i = 1, #activeNodes do
             local n = activeNodes[i]
             if n and math.abs((n.z or 0) - pz) <= vertical then
@@ -1688,11 +1772,9 @@ local function maintainLoadedBasementPowerAroundPlayers()
         end
         if #nodesNearPlayerZ <= 0 then return end
 
-        -- Skip full-area scans if no active central on this z can affect the
-        -- player's nearby loaded range.
         local canAffectPlayerArea = false
-        for i = 1, #nodesNearPlayerZ do
-            local n = nodesNearPlayerZ[i]
+        for j = 1, #nodesNearPlayerZ do
+            local n = nodesNearPlayerZ[j]
             local dx = px - n.x
             local dy = py - n.y
             local maxReach = range + math.floor(math.sqrt(n.r2))
@@ -1704,7 +1786,9 @@ local function maintainLoadedBasementPowerAroundPlayers()
         if not canAffectPlayerArea then return end
 
         for x = px - range, px + range do
-            for y = py - range, py + range do
+            local dx = x - px
+            local yRadius = math.floor(math.sqrt(math.max(0, range2 - (dx * dx))))
+            for y = py - yRadius, py + yRadius do
                 for z = pz - vertical, pz + vertical do
                     local gs = cell:getGridSquare(x, y, z)
                     if gs then
@@ -2753,37 +2837,8 @@ local function cleanupAndMaintain()
         end
     end
 
-    if CFG.EnableShipping then
-        for key, mailbox in pairs(store.mailboxes) do
-            local square = mailbox and getSquare(mailbox.x, mailbox.y, mailbox.z) or nil
-            local hasMailbox, mailboxObj = square and hasMailboxOnSquare(square) or false, nil
-            if square then
-                hasMailbox, mailboxObj = hasMailboxOnSquare(square)
-            end
-
-            if not hasMailbox then
-                store.mailboxes[key] = nil
-                changed = true
-            else
-                local centralExists = mailbox.centralKey and store.nodes[mailbox.centralKey] and effective[mailbox.centralKey]
-                local previousActive = mailbox.active == true
-                mailbox.active = centralExists and true or false
-                if previousActive ~= (mailbox.active == true) then
-                    changed = true
-                end
-
-                if mailboxObj and mailboxObj.getModData then
-                    local md = mailboxObj:getModData()
-                    md.baShippingMailboxActive = mailbox.active
-                    md.baShippingCentralKey = mailbox.centralKey
-                    md.baShippingMailboxCapacity = mailbox.capacity or CFG.MailboxCapacity
-                    md.baShippingMailboxCount = getItemsMapCount(mailbox.items)
-                    if mailboxObj.transmitModData then
-                        mailboxObj:transmitModData()
-                    end
-                end
-            end
-        end
+    if BunkersAnywhereShipping.syncMailboxes(effective) then
+        changed = true
     end
 
     if changed then
@@ -2821,6 +2876,27 @@ local function consumeBunkerKitForPlayer(actor, args)
     if actor.updateHandEquips then actor:updateHandEquips() end
     if removed and inv and inv.setDirty then inv:setDirty(true) end
 end
+BunkersAnywhereShipping.init({
+    isEnabled = function()
+        return CFG.EnableShipping == true
+    end,
+    getStore = getStore,
+    transmitStore = transmitStore,
+    getNodeKey = getNodeKey,
+    hasMailboxOnSquare = hasMailboxOnSquare,
+    findNearestActiveCentralNodeKeyFromSquare = findNearestActiveCentralNodeKeyFromSquare,
+    mergeItemsMap = mergeItemsMap,
+    getItemsMapCount = getItemsMapCount,
+    clearItemsMap = clearItemsMap,
+    getMailboxCapacity = function()
+        return CFG.MailboxCapacity
+    end,
+    activateMailboxAt = activateMailboxAt,
+    depositMailboxAt = depositMailboxAt,
+    sendMailboxToCentral = sendMailboxToCentral,
+    withdrawMailboxAt = withdrawMailboxAt,
+})
+
 local function onClientCommand(module, command, player, args)
     if module ~= "BunkersAnywhere" then return end
     if not args then return end
@@ -2844,14 +2920,8 @@ local function onClientCommand(module, command, player, args)
         if CFG.EnableCentralRadiusUpgrade == true then
             upgradeCentralRadiusAt(tonumber(args.x), tonumber(args.y), tonumber(args.z), actor, args)
         end
-    elseif command == "ActivateShippingMailbox" and CFG.EnableShipping then
-        activateMailboxAt(tonumber(args.x), tonumber(args.y), tonumber(args.z))
-    elseif command == "DepositShippingMailbox" and CFG.EnableShipping then
-        depositMailboxAt(tonumber(args.x), tonumber(args.y), tonumber(args.z), args.items or {})
-    elseif command == "SendShippingMailboxToCentral" and CFG.EnableShipping then
-        sendMailboxToCentral(tonumber(args.x), tonumber(args.y), tonumber(args.z), tonumber(args.tx), tonumber(args.ty), tonumber(args.tz))
-    elseif command == "WithdrawShippingMailbox" and CFG.EnableShipping then
-        withdrawMailboxAt(tonumber(args.x), tonumber(args.y), tonumber(args.z), actor)
+    elseif BunkersAnywhereShipping.handleClientCommand(command, actor, args) then
+        return
     elseif command == "ConsumeBunkerKit" then
         consumeBunkerKitForPlayer(actor, args)
     end
