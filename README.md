@@ -12,7 +12,7 @@ Ever found the perfect safehouse to survive the apocalypse but it lacked a secur
 *   **🪜 Immersive Teleportation:** Forget about falling down a hole! Interact with the newly installed Bunker Hatch (or with the ascending ladder in the basement) to instantly and safely teleport between the Ground Floor (Z+0) and the Basement (Z-1). 
 *   **🎮 Quick Key Integration:** You can right-click using the Context Menu to go up/down, or simply stand nearby and **press the Interact key (E)** for a super-fast transition.
 *   **🏃‍♂️ Realistic Animations:** No more static magic teleports from two meters away. Your character will *immersively walk* to the exact center **over** the hatch, crouch *(Low Loot Animation)*, and wait briefly (0.5s) before descending, completely eliminating *clippings* and wall-phasing issues.
-*   **💾 100% Persistent & Multiplayer Compatible (MP):** The mod uses forced *Chunk* saves (*Hot-Saves*) on the newly generated floor tiles. You will not lose your wooden floor when disconnecting from your server or closing the game! Everything will remain exactly as you left it after a restart.
+*   **💾 Persistent & Multiplayer Ready:** The mod uses forced *Chunk* saves (*Hot-Saves*) on the newly generated floor tiles. Bunker floors remain after reconnects and restarts, and the multiplayer shipping destination sync has been stabilized for long-distance terminals.
 
 ## 📦 Where do I find the Kit?
 The Bunker Kit is a highly useful and valuable item. If you don't want to rely solely on admin panels, you have a **~5% chance** to find it looting in:
@@ -25,6 +25,7 @@ The Bunker Kit is a highly useful and valuable item. If you don't want to rely s
 ## ⚙️ Technical Notes & Compatibility
 *   Designed and natively optimized considering the API and engine changes of **Build 42**.
 *   Supported staircases include: vanilla stairs, crafted carpentry stairs (Level 6), and other common structural objects from the base game.
+*   Multiplayer shipping terminals now keep remote destinations visible more reliably, even when no players are currently near the target area.
 
 ### Credits
 Developed and maintained by **ZEnicko**.
@@ -45,7 +46,7 @@ Developed and maintained by **ZEnicko**.
 *   **🪜 Teletransporte Inmersivo:** ¡Olvídate de caerte por un agujero! Interactúa con la tapa de Búnker recién instalada (o con la escalera de subida en el sótano) para teletransportarte de manera instantánea y segura entre la Planta Baja (Z+0) y el Sótano (Z-1). 
 *   **🎮 Integración de Teclado Rápida:** Puedes hacer clic derecho usando el Menú Contextual para subir/bajar, o simplemente posarte cerca y **presionar la tecla de Interacción (E)** para una transición súper rápida.
 *   **🏃‍♂️ Animaciones Realistas:** Nada de teletransportes mágicos estáticos a dos metros de distancia. Tu personaje _caminará de manera inmersiva_ hasta ubicarse exactamente **sobre** la escotilla, se agachará *(Animación de saqueo bajo)* y esperará brevemente (0.5s) antes de descender, eliminando por completo los *clippings* y los errores de atravesar paredes.
-*   **💾 100% Persistente y Compatible con Multijugador (MP):** El mod emplea forzados de guardado de *Chunks* (*Hot-Saves*) en las nuevas plataformas. ¡No perderás tu suelo de madera al desconectarte de tu servidor o al cerrar el juego! Todo permanecerá exactamente como lo dejaste tras un reinicio.
+*   **💾 Persistente y listo para Multijugador:** El mod emplea forzados de guardado de *Chunks* (*Hot-Saves*) en las nuevas plataformas. No perderás tu suelo de madera al desconectarte o reiniciar, y la sincronizacion de destinos de shipping en multijugador se estabilizo para terminales muy lejanas.
 
 ## 📦 ¿Dónde encuentro el Kit?
 El Kit de Bunker es un artículo sumamente útil y, por tanto, valioso. Si no quieres depender de paneles de administrador, tienes un **~5% de probabilidad** de encontrarlo looteando en:
@@ -59,6 +60,7 @@ El Kit de Bunker es un artículo sumamente útil y, por tanto, valioso. Si no qu
 ## ⚙️ Notas Técnicas y Compatibilidad
 *   Diseñado y optimizado nativamente teniendo en cuenta la API y los cambios del motor de la **Build 42**.
 *   Las escaleras soportadas incluyen: vanilla, escaleras crafteadas de carpintería (Nivel 6) y otros objetos estructurales comunes del juego base.
+*   Los terminales de shipping en Multiplayer ahora mantienen los destinos remotos visibles de forma mucho mas confiable, incluso si no hay jugadores cerca del area destino.
 
 ### Créditos
 Desarrollado y mantenido por **ZEnicko**.
