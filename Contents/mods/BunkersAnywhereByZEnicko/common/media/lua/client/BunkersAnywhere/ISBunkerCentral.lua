@@ -2192,6 +2192,9 @@ local function BunkersAnywhereOnServerCommand(module, command, args)
         BunkersAnywhere.onServerCentralBatteryPayout(args or {})
     elseif command == "ShippingDestinationsSync" then
         local store = BunkersAnywhere.getInvisibleGeneratorStore()
+        local syncMs = getTimestampMs and getTimestampMs() or 0
+        local receivedCount = 0
+        BunkersAnywhere._lastShippingDestinationSyncMs = syncMs
         store.shippingDestinations = {}
         local list = args and args.destinations or nil
         if list then
@@ -2207,8 +2210,30 @@ local function BunkersAnywhereOnServerCommand(module, command, args)
                         ownerUsername = entry.ownerUsername or "",
                         ownerOnlineID = entry.ownerOnlineID or -1,
                     }
+                    receivedCount = receivedCount + 1
                 end
             end
+        end
+        if receivedCount > 0 then
+            BunkersAnywhere._shippingDestinationsCache = {}
+            for key, entry in pairs(store.shippingDestinations) do
+                BunkersAnywhere._shippingDestinationsCache[key] = {
+                    key = key,
+                    x = entry.x,
+                    y = entry.y,
+                    z = entry.z,
+                    active = entry.active == true,
+                    ownerUsername = entry.ownerUsername or "",
+                    ownerOnlineID = entry.ownerOnlineID or -1,
+                    centralKey = entry.centralKey,
+                }
+            end
+            BunkersAnywhere._shippingDestinationsCacheCount = receivedCount
+            BunkersAnywhere._lastNonEmptyShippingDestinationSyncMs = syncMs
+        end
+        if BunkersAnywhere._lastLoggedShippingDestinationCount ~= receivedCount then
+            BunkersAnywhere._lastLoggedShippingDestinationCount = receivedCount
+            print("[BunkersAnywhere][Shipping] destinations sync count=" .. tostring(receivedCount))
         end
     elseif command == "RefreshInvisibleGenerators" then
         BunkersAnywhere.refreshOwnedInvisibleGenerators()

@@ -120,6 +120,11 @@ end
 local function pushShippingDestinations(targetPlayer)
     if not sendServerCommand then return end
     local payload = { destinations = buildShippingDestinationSyncList() }
+    local count = payload.destinations and #payload.destinations or 0
+    if BunkersAnywhere._lastLoggedServerShippingDestinationCount ~= count then
+        BunkersAnywhere._lastLoggedServerShippingDestinationCount = count
+        print("[BunkersAnywhere][Shipping] server destinations count=" .. tostring(count))
+    end
     if targetPlayer then
         sendServerCommand(targetPlayer, "BunkersAnywhere", "ShippingDestinationsSync", payload)
         return
@@ -2990,13 +2995,11 @@ local function flushPendingGroundPayloadForMailbox(store, mailKey, square)
 
     clearItemsMap(pending)
     pendingByKey[mailKey] = nil
-    print("[BunkersAnywhere][ShippingDebug] flushed pending ground payload for " .. tostring(mailKey))
     return true
 end
 
 local function sendMailboxToCentral(x, y, z, tx, ty, tz)
     if not CFG.EnableShipping then return false end
-    print("[BunkersAnywhere][ShippingDebug] sendMailboxToCentral from " .. tostring(x) .. "," .. tostring(y) .. "," .. tostring(z) .. " to " .. tostring(tx) .. "," .. tostring(ty) .. "," .. tostring(tz))
     local store = getStore()
     local effective = getNetworkState(store)
     local mailKey = getNodeKey(x, y, z)
@@ -3056,24 +3059,18 @@ local function sendMailboxToCentral(x, y, z, tx, ty, tz)
     end
 
     local payload = removeWorldItemsFromSquare(sourceSquare)
-    print("[BunkersAnywhere][ShippingDebug] source payload floor=" .. tostring(getItemsMapCount(payload)))
     if getItemsMapCount(payload) <= 0 then
-        print("[BunkersAnywhere][ShippingDebug] source floor empty")
         return false
     end
 
     if targetSquare then
-        if flushPendingGroundPayloadForMailbox(store, targetMailKey, targetSquare) then
-            print("[BunkersAnywhere][ShippingDebug] delivered queued payload before current send to " .. tostring(targetMailKey))
-        end
+        flushPendingGroundPayloadForMailbox(store, targetMailKey, targetSquare)
         if not addPayloadToContainerOrGround(payload, nil, targetSquare) then
             print("[BunkersAnywhere][ShippingDebug] payload add failed")
             return false
         end
-        print("[BunkersAnywhere][ShippingDebug] payload moved to floor")
     else
         queuePendingGroundPayload(store, targetMailKey, payload)
-        print("[BunkersAnywhere][ShippingDebug] queued payload for unloaded destination " .. tostring(targetMailKey) .. " count=" .. tostring(getItemsMapCount(payload)))
     end
 
     local hasMailbox, mailboxObj = hasMailboxOnSquare(sourceSquare)
@@ -3246,6 +3243,10 @@ local function cleanupAndMaintain()
 
     if BunkersAnywhereShipping.syncMailboxes(effective) then
         changed = true
+    end
+
+    if CFG.EnableShipping == true then
+        pushShippingDestinations()
     end
 
     if changed then

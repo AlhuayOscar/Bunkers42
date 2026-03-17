@@ -35,9 +35,7 @@ function Shipping.syncMailboxes(effective)
             changed = true
         end
 
-        if not square then
-            print("[BunkersAnywhere][ShippingDebug] syncMailboxes keeping mailbox " .. tostring(key) .. " while square is not loaded")
-        else
+        if square then
             local hasMailbox, mailboxObj = H.hasMailboxOnSquare(square)
             if not hasMailbox then
                 mailbox.missingLoadedChecks = math.floor(tonumber(mailbox.missingLoadedChecks) or 0) + 1
@@ -49,8 +47,6 @@ function Shipping.syncMailboxes(effective)
                         store.shippingPendingGround[key] = nil
                     end
                     changed = true
-                else
-                    print("[BunkersAnywhere][ShippingDebug] syncMailboxes preserving mailbox " .. tostring(key) .. " after loaded missing check " .. tostring(mailbox.missingLoadedChecks))
                 end
             elseif mailboxObj and mailboxObj.getModData then
                 if (tonumber(mailbox.missingLoadedChecks) or 0) ~= 0 then

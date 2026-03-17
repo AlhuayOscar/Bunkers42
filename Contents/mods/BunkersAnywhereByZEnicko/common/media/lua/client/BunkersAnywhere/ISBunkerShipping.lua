@@ -22,7 +22,83 @@ local function getNoDestinationsLabel()
     return bunkerText("ContextMenu_SendShippingMailboxNoDestinations", "Send shipping (no active destinations)")
 end
 
-local function requestShippingStoreSync()
+local function getShippingDestinationCountLabel(count)
+    return bunkerText("ContextMenu_ShippingDestinationCount", "Shipping destinations: %s", tostring(count or 0))
+end
+
+local function getSendShippingLabel(count)
+    return bunkerText("ContextMenu_SendShippingMailboxCount", "Send shipping [%s]", tostring(count or 0))
+end
+
+local function copyShippingDestinationsMap(src)
+    local copied = {}
+    if type(src) ~= "table" then
+        return copied
+    end
+    for key, destination in pairs(src) do
+        if destination then
+            copied[key] = {
+                key = destination.key or key,
+                x = destination.x,
+                y = destination.y,
+                z = destination.z,
+                active = destination.active == true,
+                ownerUsername = destination.ownerUsername or "",
+                ownerOnlineID = destination.ownerOnlineID or -1,
+                centralKey = destination.centralKey,
+            }
+        end
+    end
+    return copied
+end
+
+local function countShippingDestinationsMap(src)
+    local total = 0
+    if type(src) ~= "table" then
+        return 0
+    end
+    for _, destination in pairs(src) do
+        if destination then
+            total = total + 1
+        end
+    end
+    return total
+end
+
+local function rememberShippingDestinations(map, timestampMs)
+    local count = countShippingDestinationsMap(map)
+    if count <= 0 then
+        return
+    end
+    local now = timestampMs or (getTimestampMs and getTimestampMs() or 0)
+    BunkersAnywhere._shippingDestinationsCache = copyShippingDestinationsMap(map)
+    BunkersAnywhere._shippingDestinationsCacheCount = count
+    BunkersAnywhere._lastNonEmptyShippingDestinationSyncMs = now
+end
+
+local function getFallbackShippingDestinations()
+    local cache = BunkersAnywhere._shippingDestinationsCache
+    local count = countShippingDestinationsMap(cache)
+    if count <= 0 then
+        return nil
+    end
+
+    local now = getTimestampMs and getTimestampMs() or 0
+    local last = BunkersAnywhere._lastNonEmptyShippingDestinationSyncMs or 0
+    if now ~= 0 and last ~= 0 and (now - last) > 30000 then
+        return nil
+    end
+
+    return cache
+end
+
+local function requestShippingStoreSync(force)
+    local now = getTimestampMs and getTimestampMs() or 0
+    local last = BunkersAnywhere._lastShippingStoreSyncRequestMs or 0
+    if force ~= true and now ~= 0 and (now - last) < 1500 then
+        return
+    end
+    BunkersAnywhere._lastShippingStoreSyncRequestMs = now
     if ModData and ModData.request and BunkersAnywhere and BunkersAnywhere.InvisibleCentralGenerator and BunkersAnywhere.InvisibleCentralGenerator.DataKey then
         ModData.request(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
     end
@@ -81,6 +157,12 @@ function BunkersAnywhere.getActiveShippingDestinations(currentMailObj)
     requestShippingStoreSync()
     local store = BunkersAnywhere.getInvisibleGeneratorStore()
     local shippingDestinations = store and store.shippingDestinations or nil
+    local destinationCount = countShippingDestinationsMap(shippingDestinations)
+    if destinationCount > 0 then
+        rememberShippingDestinations(shippingDestinations)
+    else
+        shippingDestinations = getFallbackShippingDestinations()
+    end
     if shippingDestinations then
         for key, destination in pairs(shippingDestinations) do
             if destination and key ~= currentKey then
@@ -176,7 +258,7 @@ end
 function BunkersAnywhere.activateShippingMailbox(mailObj, playerObj)
     local sq = mailObj and mailObj:getSquare()
     if not sq then return end
-    requestShippingStoreSync()
+    requestShippingStoreSync(true)
     if sendClientCommand then
         local identity = getShippingPlayerIdentity(playerObj)
         sendClientCommand("BunkersAnywhere", "ActivateShippingMailbox", {
@@ -193,7 +275,7 @@ end
 function BunkersAnywhere.sendShippingMailbox(mailObj, playerObj, targetX, targetY, targetZ)
     local sq = mailObj and mailObj:getSquare()
     if not sq then return end
-    requestShippingStoreSync()
+    requestShippingStoreSync(true)
     if sendClientCommand then
         sendClientCommand("BunkersAnywhere", "SendShippingMailboxToCentral", {
             x = sq:getX(), y = sq:getY(), z = sq:getZ(),
@@ -262,19 +344,17 @@ local function BunkersAnywhereShippingWorldContext(player, context, worldobjects
     local sx = sq and sq:getX() or "?"
     local sy = sq and sq:getY() or "?"
     local sz = sq and sq:getZ() or "?"
-    print("[BunkersAnywhere][ShippingClientDebug] context mailbox at " .. tostring(sx) .. "," .. tostring(sy) .. "," .. tostring(sz))
-
     local mailboxState = BunkersAnywhere.getShippingMailboxState(mailObj)
     if not mailboxState.active then
-        print("[BunkersAnywhere][ShippingClientDebug] mailbox inactive")
         context:addOption(bunkerText("ContextMenu_ActivateShippingMailbox", "Activate shipping"), mailObj, BunkersAnywhere.onActivateShippingMailbox, playerObj)
         return
     end
 
     local destinations = BunkersAnywhere.getActiveShippingDestinations(mailObj)
-    print("[BunkersAnywhere][ShippingClientDebug] mailbox active destinations=" .. tostring(#destinations))
+    local info = context:addOption(getShippingDestinationCountLabel(#destinations))
+    info.notAvailable = true
     if #destinations > 0 then
-        local sub = context:addOption(bunkerText("ContextMenu_SendShippingMailbox", "Send shipping"))
+        local sub = context:addOption(getSendShippingLabel(#destinations))
         local subCtx = ISContextMenu:getNew(context)
         context:addSubMenu(sub, subCtx)
         table.sort(destinations, function(a, b)
@@ -298,5 +378,53 @@ local function BunkersAnywhereShippingWorldContext(player, context, worldobjects
     end
 end
 
-Events.OnFillWorldObjectContextMenu.Add(BunkersAnywhereShippingWorldContext)
-Events.OnGameStart.Add(requestShippingStoreSync)
+local function BunkersAnywhereShippingWorldContextSafe(player, context, worldobjects, test)
+    local ok, err = pcall(BunkersAnywhereShippingWorldContext, player, context, worldobjects, test)
+    if not ok then
+        local now = getTimestampMs and getTimestampMs() or 0
+        local last = BunkersAnywhere._lastShippingContextErrorMs or 0
+        if now == 0 or (now - last) > 3000 then
+            BunkersAnywhere._lastShippingContextErrorMs = now
+            print("[BunkersAnywhere] ShippingWorldContext error: " .. tostring(err))
+        end
+    end
+end
+
+Events.OnFillWorldObjectContextMenu.Add(BunkersAnywhereShippingWorldContextSafe)
+
+local function BunkersAnywhereMaintainShippingDestinationCache()
+    if not isClient or not isClient() then return end
+    local now = getTimestampMs and getTimestampMs() or 0
+    if now == 0 then return end
+
+    local lastSync = BunkersAnywhere._lastShippingDestinationSyncMs or 0
+    local lastRequest = BunkersAnywhere._lastShippingStoreSyncRequestMs or 0
+    local store = BunkersAnywhere and BunkersAnywhere.getInvisibleGeneratorStore and BunkersAnywhere.getInvisibleGeneratorStore() or nil
+    local liveCount = countShippingDestinationsMap(store and store.shippingDestinations or nil)
+    local cachedCount = tonumber(BunkersAnywhere._shippingDestinationsCacheCount) or 0
+    local hasDestinations = liveCount > 0 or cachedCount > 0
+
+    local syncAge = now - lastSync
+    local requestAge = now - lastRequest
+    local staleAge = hasDestinations and 15000 or 5000
+    if syncAge >= staleAge and requestAge >= 2500 then
+        requestShippingStoreSync(true)
+    end
+end
+
+local function BunkersAnywhereMaintainShippingDestinationCacheSafe()
+    local ok, err = pcall(BunkersAnywhereMaintainShippingDestinationCache)
+    if not ok then
+        local now = getTimestampMs and getTimestampMs() or 0
+        local last = BunkersAnywhere._lastShippingCacheErrorMs or 0
+        if now == 0 or (now - last) > 5000 then
+            BunkersAnywhere._lastShippingCacheErrorMs = now
+            print("[BunkersAnywhere] Shipping cache error: " .. tostring(err))
+        end
+    end
+end
+
+Events.OnGameStart.Add(function()
+    requestShippingStoreSync(true)
+end)
+Events.OnTick.Add(BunkersAnywhereMaintainShippingDestinationCacheSafe)
