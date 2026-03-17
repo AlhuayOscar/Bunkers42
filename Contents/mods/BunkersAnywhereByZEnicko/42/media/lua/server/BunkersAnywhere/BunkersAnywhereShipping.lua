@@ -4,6 +4,7 @@ BunkersAnywhereShipping = BunkersAnywhereShipping or {}
 
 local Shipping = BunkersAnywhereShipping
 local H = nil
+local LOADED_MISSING_CHECKS_TO_REMOVE = 3
 
 function Shipping.init(helpers)
     H = helpers
@@ -39,8 +40,22 @@ function Shipping.syncMailboxes(effective)
         else
             local hasMailbox, mailboxObj = H.hasMailboxOnSquare(square)
             if not hasMailbox then
-                print("[BunkersAnywhere][ShippingDebug] syncMailboxes preserving mailbox " .. tostring(key) .. " because loaded square has no sprite this tick")
+                mailbox.missingLoadedChecks = math.floor(tonumber(mailbox.missingLoadedChecks) or 0) + 1
+                if mailbox.missingLoadedChecks >= LOADED_MISSING_CHECKS_TO_REMOVE then
+                    print("[BunkersAnywhere][ShippingDebug] syncMailboxes removing mailbox " .. tostring(key) .. " after loaded missing checks=" .. tostring(mailbox.missingLoadedChecks))
+                    store.mailboxes[key] = nil
+                    store.shippingDestinations[key] = nil
+                    if store.shippingPendingGround then
+                        store.shippingPendingGround[key] = nil
+                    end
+                    changed = true
+                else
+                    print("[BunkersAnywhere][ShippingDebug] syncMailboxes preserving mailbox " .. tostring(key) .. " after loaded missing check " .. tostring(mailbox.missingLoadedChecks))
+                end
             elseif mailboxObj and mailboxObj.getModData then
+                if (tonumber(mailbox.missingLoadedChecks) or 0) ~= 0 then
+                    mailbox.missingLoadedChecks = 0
+                end
                 local md = mailboxObj:getModData()
                 md.baShippingMailboxActive = mailbox.active
                 md.baShippingCentralKey = mailbox.centralKey
@@ -51,12 +66,21 @@ function Shipping.syncMailboxes(effective)
                 if mailboxObj.transmitModData then
                     mailboxObj:transmitModData()
                 end
+                if H.flushPendingGroundPayloadForMailbox and H.flushPendingGroundPayloadForMailbox(store, key, square) then
+                    changed = true
+                end
             end
         end
     end
 
     for key, destination in pairs(store.shippingDestinations) do
-        if store.mailboxes[key] and destination then
+        if not store.mailboxes[key] then
+            store.shippingDestinations[key] = nil
+            if store.shippingPendingGround then
+                store.shippingPendingGround[key] = nil
+            end
+            changed = true
+        elseif destination then
             destination.active = store.mailboxes[key].active == true
         end
     end

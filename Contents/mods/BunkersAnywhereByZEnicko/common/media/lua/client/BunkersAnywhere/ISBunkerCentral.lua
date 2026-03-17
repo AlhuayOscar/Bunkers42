@@ -109,14 +109,6 @@ local BA_LOCAL_TEXT = {
         IGUI_Bunker_CentralInstallNeedWall = "You need an interior wall to place the electric central",
         IGUI_Bunker_CentralInstalled = "Electric central installed",
         IGUI_Bunker_CentralAlreadyPresent = "There is already an electric central here",
-        IGUI_Bunker_ShippingTileGranted = "Shipping tile added to inventory",
-        IGUI_Bunker_ShippingTileInstalled = "Shipping tile installed",
-        IGUI_Bunker_ShippingTileAlreadyPresent = "There is already a shipping tile here",
-        IGUI_Bunker_ShippingTileInvalid = "Shipping tile could not be created",
-        ContextMenu_CentralGiveShippingTile01 = "Get shipping tile 01",
-        ContextMenu_CentralGiveShippingTile02 = "Get shipping tile 02",
-        ContextMenu_PlaceShippingTile = "Place shipping tile",
-        ContextMenu_OpenShippingTile = "Open shipping tile",
     },
     ES = {
         IGUI_Bunker_CentralGeneratorConnected = "Central local conectada (generador oculto sin toxicidad)",
@@ -180,14 +172,6 @@ local BA_LOCAL_TEXT = {
         IGUI_Bunker_CentralInstallNeedWall = "Necesitas una pared interior para colocar la central electrica",
         IGUI_Bunker_CentralInstalled = "Central electrica instalada",
         IGUI_Bunker_CentralAlreadyPresent = "Ya hay una central electrica aqui",
-        IGUI_Bunker_ShippingTileGranted = "Tile de shipping agregado al inventario",
-        IGUI_Bunker_ShippingTileInstalled = "Shipping tile instalado",
-        IGUI_Bunker_ShippingTileAlreadyPresent = "Ya hay un shipping tile aqui",
-        IGUI_Bunker_ShippingTileInvalid = "No se pudo crear el shipping tile",
-        ContextMenu_CentralGiveShippingTile01 = "Obtener shipping tile 01",
-        ContextMenu_CentralGiveShippingTile02 = "Obtener shipping tile 02",
-        ContextMenu_PlaceShippingTile = "Colocar shipping tile",
-        ContextMenu_OpenShippingTile = "Abrir shipping tile",
     },
 }
 
@@ -1502,149 +1486,6 @@ function BunkersAnywhere.removeCentralBattery(centralObj, playerObj, batteryInde
     })
 end
 
-local function getShippingPlacementSpriteFromItem(item)
-    local itemType = item and item.getType and item:getType() or nil
-    if itemType == "shipping_tile_01" then
-        return "rooftop_furniture_2"
-    elseif itemType == "shipping_tile_02" then
-        return "rooftop_furniture_3"
-    end
-    local fullType = item and item.getFullType and item:getFullType() or nil
-    if fullType == "Base.shipping_tile_01" then
-        return "rooftop_furniture_2"
-    elseif fullType == "Base.shipping_tile_02" then
-        return "rooftop_furniture_3"
-    end
-    return nil
-end
-
-function BunkersAnywhere.isShippingTileObject(obj)
-    if not obj then return false end
-    local md = obj.getModData and obj:getModData() or nil
-    if md and md.baShippingTile == true then
-        return true
-    end
-    local sprite = obj.getSprite and obj:getSprite() or nil
-    local spriteName = sprite and sprite.getName and sprite:getName() or nil
-    return spriteName == "rooftop_furniture_2" or spriteName == "rooftop_furniture_3"
-end
-
-function BunkersAnywhere.canPlaceShippingTileOnSquare(sq)
-    if not sq then return false end
-    local objects = sq:getObjects()
-    if objects then
-        for i = 0, objects:size() - 1 do
-            local obj = objects:get(i)
-            if BunkersAnywhere.isShippingTileObject(obj) then
-                return false
-            end
-        end
-    end
-    return true
-end
-
-function BunkersAnywhere.placeShippingTileOnSquare(item, playerObj, sq)
-    if not sq or not item or not playerObj then return end
-    local spriteName = getShippingPlacementSpriteFromItem(item)
-    local fullType = item.getFullType and item:getFullType() or nil
-    if not spriteName then return end
-    if not BunkersAnywhere.canPlaceShippingTileOnSquare(sq) then
-        playerObj:setHaloNote(baText("IGUI_Bunker_ShippingTileAlreadyPresent"), 255, 120, 0, 320)
-        return
-    end
-
-    local sprite = getSprite and getSprite(spriteName) or nil
-    if not sprite then
-        playerObj:setHaloNote(baText("IGUI_Bunker_ShippingTileInvalid"), 255, 120, 0, 320)
-        return
-    end
-
-    local obj = IsoGenerator.new(sq:getCell())
-    if not obj then return end
-    obj:setSprite(sprite)
-    obj:setSquare(sq)
-
-    local md = obj:getModData()
-    md.baShippingTile = true
-    md.baShippingTileItemType = fullType or ""
-    md.baShippingTileDisplayName = "Shipping Tile"
-    md.generatorFullType = fullType or ("Moveables." .. spriteName)
-
-    if fullType and obj.setName then
-        obj:setName(fullType)
-    end
-
-    if sq.AddSpecialObject then
-        sq:AddSpecialObject(obj)
-    end
-
-    local container = nil
-    if obj.createContainersFromSpriteProperties then
-        pcall(function()
-            obj:createContainersFromSpriteProperties()
-        end)
-    end
-    container = obj.getContainer and obj:getContainer() or obj:getItemContainer()
-    if container then
-        if container.setExplored then
-            container:setExplored(true)
-        end
-    end
-    if sq.RecalcAllWithNeighbours then
-        sq:RecalcAllWithNeighbours(true)
-    end
-
-    if isClient() and obj.transmitCompleteItemToServer then
-        obj:transmitCompleteItemToServer()
-    end
-    if isClient() and obj.transmitModData then
-        obj:transmitModData()
-    end
-    if obj.setConnected then
-        obj:setConnected(false)
-    end
-    if obj.setFuel then
-        obj:setFuel(0)
-    end
-
-    playerObj:getInventory():Remove(item)
-    playerObj:setHaloNote(baText("IGUI_Bunker_ShippingTileInstalled"), 0, 255, 100, 320)
-end
-
-function BunkersAnywhere.startPlaceShippingTile(item, playerObj)
-    if not item or not playerObj or not ISBunkerShippingTileCursor or not ISBunkerShippingTileCursor.new then return end
-    local cursor = ISBunkerShippingTileCursor:new(playerObj, item)
-    if cursor and getCell and getCell() and getCell().setDrag then
-        getCell():setDrag(cursor, playerObj:getPlayerNum())
-    end
-end
-
-function BunkersAnywhere.openShippingTileContainer(obj, playerObj)
-    if not obj or not playerObj then return end
-    local container = obj.getContainer and obj:getContainer() or obj:getItemContainer()
-    if not container then return end
-    local loot = getPlayerLoot and getPlayerLoot(playerObj:getPlayerNum()) or nil
-    if not loot or not loot.setNewContainer then return end
-    loot:setNewContainer(container)
-    loot:setVisible(true)
-    if loot.bringToTop then
-        loot:bringToTop()
-    end
-end
-
-function BunkersAnywhere.requestCentralShippingTile(centralObj, playerObj, fullType)
-    local sq = centralObj and centralObj:getSquare()
-    if not sq or not sendClientCommand or not playerObj or not fullType or fullType == "" then return end
-    sendClientCommand("BunkersAnywhere", "GiveCentralUtilityItem", {
-        x = sq:getX(),
-        y = sq:getY(),
-        z = sq:getZ(),
-        fullType = tostring(fullType),
-        onlineID = playerObj.getOnlineID and playerObj:getOnlineID() or -1,
-        username = playerObj.getUsername and playerObj:getUsername() or "",
-    })
-end
-
 function BunkersAnywhere.setInvisibleGeneratorCentralState(centralObj, playerObj, wantOn)
     local sq = centralObj and centralObj:getSquare()
     if not sq then return end
@@ -2349,8 +2190,6 @@ local function BunkersAnywhereOnServerCommand(module, command, args)
     if module ~= "BunkersAnywhere" then return end
     if command == "CentralBatteryPayout" then
         BunkersAnywhere.onServerCentralBatteryPayout(args or {})
-    elseif command == "CentralUtilityItemPayout" then
-        BunkersAnywhere.onServerCentralUtilityItemPayout(args or {})
     elseif command == "ShippingDestinationsSync" then
         local store = BunkersAnywhere.getInvisibleGeneratorStore()
         store.shippingDestinations = {}
@@ -2373,19 +2212,6 @@ local function BunkersAnywhereOnServerCommand(module, command, args)
         end
     elseif command == "RefreshInvisibleGenerators" then
         BunkersAnywhere.refreshOwnedInvisibleGenerators()
-    end
-end
-
-function BunkersAnywhere.onServerCentralUtilityItemPayout(args)
-    local playerObj = getSpecificPlayer(0)
-    if not playerObj then return end
-    local inv = playerObj:getInventory()
-    if not inv then return end
-    local fullType = tostring(args and args.fullType or "")
-    if fullType == "" then return end
-    local item = inv:AddItem(fullType)
-    if item and playerObj.setHaloNote then
-        playerObj:setHaloNote(baText("IGUI_Bunker_ShippingTileGranted"), 0, 220, 255, 300)
     end
 end
 

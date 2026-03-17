@@ -73,6 +73,7 @@ local function getStore()
     data.mailboxes = data.mailboxes or {}
     data.inboxes = data.inboxes or {}
     data.shippingDestinations = data.shippingDestinations or {}
+    data.shippingPendingGround = data.shippingPendingGround or {}
     return data
 end
 
@@ -2958,6 +2959,41 @@ local function addPayloadToContainerOrGround(payload, targetContainers, targetSq
     return movedAny
 end
 
+local function queuePendingGroundPayload(store, mailKey, payload)
+    if not store or not mailKey or not payload then return false end
+    store.shippingPendingGround = store.shippingPendingGround or {}
+    local pending = store.shippingPendingGround[mailKey]
+    if not pending then
+        pending = {}
+        store.shippingPendingGround[mailKey] = pending
+    end
+    mergeItemsMap(pending, payload)
+    return getItemsMapCount(pending) > 0
+end
+
+local function flushPendingGroundPayloadForMailbox(store, mailKey, square)
+    if not store or not mailKey or not square then return false end
+    local pendingByKey = store.shippingPendingGround or nil
+    local pending = pendingByKey and pendingByKey[mailKey] or nil
+    if not pending or getItemsMapCount(pending) <= 0 then
+        return false
+    end
+
+    local hasMailbox = hasMailboxOnSquare(square)
+    if not hasMailbox then
+        return false
+    end
+
+    if not addPayloadToContainerOrGround(pending, nil, square) then
+        return false
+    end
+
+    clearItemsMap(pending)
+    pendingByKey[mailKey] = nil
+    print("[BunkersAnywhere][ShippingDebug] flushed pending ground payload for " .. tostring(mailKey))
+    return true
+end
+
 local function sendMailboxToCentral(x, y, z, tx, ty, tz)
     if not CFG.EnableShipping then return false end
     print("[BunkersAnywhere][ShippingDebug] sendMailboxToCentral from " .. tostring(x) .. "," .. tostring(y) .. "," .. tostring(z) .. " to " .. tostring(tx) .. "," .. tostring(ty) .. "," .. tostring(tz))
@@ -2994,13 +3030,29 @@ local function sendMailboxToCentral(x, y, z, tx, ty, tz)
     end
 
     local sourceSquare = getSquare(x, y, z)
-    local targetSquare = getSquare(targetDestination.x, targetDestination.y, targetDestination.z)
-    if not targetSquare then
-        targetSquare = getOrCreateHiddenGeneratorSquare(targetDestination.x, targetDestination.y, targetDestination.z)
+    local loadedTargetSquare = getSquare(targetDestination.x, targetDestination.y, targetDestination.z)
+    if loadedTargetSquare then
+        local hasTargetMailbox = hasMailboxOnSquare(loadedTargetSquare)
+        if not hasTargetMailbox then
+            print("[BunkersAnywhere][ShippingDebug] target destination sprite missing on loaded square, removing " .. tostring(targetMailKey))
+            store.mailboxes[targetMailKey] = nil
+            if store.shippingDestinations then
+                store.shippingDestinations[targetMailKey] = nil
+            end
+            if store.shippingPendingGround then
+                store.shippingPendingGround[targetMailKey] = nil
+            end
+            transmitStore()
+            pushShippingDestinations()
+            return false
+        end
     end
+    local targetSquare = loadedTargetSquare
     if not sourceSquare or not targetSquare then
-        print("[BunkersAnywhere][ShippingDebug] source or target square missing")
-        return false
+        if not sourceSquare then
+            print("[BunkersAnywhere][ShippingDebug] source square missing")
+            return false
+        end
     end
 
     local payload = removeWorldItemsFromSquare(sourceSquare)
@@ -3010,11 +3062,19 @@ local function sendMailboxToCentral(x, y, z, tx, ty, tz)
         return false
     end
 
-    if not addPayloadToContainerOrGround(payload, nil, targetSquare) then
-        print("[BunkersAnywhere][ShippingDebug] payload add failed")
-        return false
+    if targetSquare then
+        if flushPendingGroundPayloadForMailbox(store, targetMailKey, targetSquare) then
+            print("[BunkersAnywhere][ShippingDebug] delivered queued payload before current send to " .. tostring(targetMailKey))
+        end
+        if not addPayloadToContainerOrGround(payload, nil, targetSquare) then
+            print("[BunkersAnywhere][ShippingDebug] payload add failed")
+            return false
+        end
+        print("[BunkersAnywhere][ShippingDebug] payload moved to floor")
+    else
+        queuePendingGroundPayload(store, targetMailKey, payload)
+        print("[BunkersAnywhere][ShippingDebug] queued payload for unloaded destination " .. tostring(targetMailKey) .. " count=" .. tostring(getItemsMapCount(payload)))
     end
-    print("[BunkersAnywhere][ShippingDebug] payload moved to floor")
 
     local hasMailbox, mailboxObj = hasMailboxOnSquare(sourceSquare)
     if hasMailbox and mailboxObj and mailboxObj.getModData then
@@ -3025,14 +3085,16 @@ local function sendMailboxToCentral(x, y, z, tx, ty, tz)
         end
     end
 
-    local hasTargetMailbox, targetMailboxObj = hasMailboxOnSquare(targetSquare)
-    if hasTargetMailbox and targetMailboxObj and targetMailboxObj.getModData then
-        local md = targetMailboxObj:getModData()
-        md.baShippingMailboxActive = true
-        md.baShippingCentralKey = targetDestination.centralKey
-        md.baShippingMailboxCount = getItemsMapCount(payload)
-        if targetMailboxObj.transmitModData then
-            targetMailboxObj:transmitModData()
+    if targetSquare then
+        local hasTargetMailbox, targetMailboxObj = hasMailboxOnSquare(targetSquare)
+        if hasTargetMailbox and targetMailboxObj and targetMailboxObj.getModData then
+            local md = targetMailboxObj:getModData()
+            md.baShippingMailboxActive = true
+            md.baShippingCentralKey = targetDestination.centralKey
+            md.baShippingMailboxCount = getItemsMapCount(payload)
+            if targetMailboxObj.transmitModData then
+                targetMailboxObj:transmitModData()
+            end
         end
     end
 
@@ -3047,20 +3109,6 @@ local function giveItemToPlayer(player, fullType)
     if not inv then return false end
     local item = inv:AddItem(fullType)
     return item ~= nil
-end
-
-local function giveCentralUtilityItemToPlayer(player, fullType)
-    if not player or not fullType or fullType == "" then return false end
-    if fullType ~= "Base.shipping_tile_01" and fullType ~= "Base.shipping_tile_02" then
-        return false
-    end
-    if sendServerCommand then
-        sendServerCommand(player, "BunkersAnywhere", "CentralUtilityItemPayout", {
-            fullType = tostring(fullType),
-        })
-        return true
-    end
-    return giveItemToPlayer(player, fullType)
 end
 
 local function withdrawMailboxAt(x, y, z, player)
@@ -3250,6 +3298,7 @@ BunkersAnywhereShipping.init({
     getMailboxCapacity = function()
         return CFG.MailboxCapacity
     end,
+    flushPendingGroundPayloadForMailbox = flushPendingGroundPayloadForMailbox,
     pushShippingDestinations = pushShippingDestinations,
     activateMailboxAt = activateMailboxAt,
     depositMailboxAt = depositMailboxAt,
@@ -3280,8 +3329,6 @@ local function onClientCommand(module, command, player, args)
         if CFG.EnableCentralRadiusUpgrade == true then
             upgradeCentralRadiusAt(tonumber(args.x), tonumber(args.y), tonumber(args.z), actor, args)
         end
-    elseif command == "GiveCentralUtilityItem" then
-        giveCentralUtilityItemToPlayer(actor, tostring(args.fullType or ""))
     elseif BunkersAnywhereShipping.handleClientCommand(command, actor, args) then
         return
     elseif command == "ConsumeBunkerKit" then

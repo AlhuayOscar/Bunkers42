@@ -59,26 +59,6 @@ module Base
         DisplayCategory = Household,
         Weight = 18,
     }
-
-    item shipping_tile_01
-    {
-        ItemType = base:normal,
-        DisplayName = Shipping Tile 01,
-        Icon = BunkerKit,
-        WorldObjectSprite = rooftop_furniture_2,
-        DisplayCategory = Household,
-        Weight = 15,
-    }
-
-    item shipping_tile_02
-    {
-        ItemType = base:normal,
-        DisplayName = Shipping Tile 02,
-        Icon = BunkerKit,
-        WorldObjectSprite = rooftop_furniture_3,
-        DisplayCategory = Household,
-        Weight = 15,
-    }
 }
 
 module BunkersAnywhere
