@@ -430,7 +430,11 @@ local function getEnergyPercentFromRuntimeMinutes(runtimeMinutes)
     local maxRuntime = getMaxRuntimeMinutes()
     if maxRuntime <= 0 then return 0 end
     if runtime <= 0 then return 0 end
-    return clampEnergyPercent(math.ceil((runtime / maxRuntime) * CFG.CentralEnergyMax))
+    local minutesPerPercent = getMinutesPerPercent()
+    if minutesPerPercent > 0 and runtime < minutesPerPercent then
+        return 0
+    end
+    return clampEnergyPercent(math.floor((runtime / maxRuntime) * CFG.CentralEnergyMax))
 end
 
 local function getBatteryRuntimeMinutes(fullType)
@@ -2630,6 +2634,10 @@ local function consumeCentralRuntimePerMinute(store)
                     if drain > 0 then
                         runtime = runtime - drain
                         if runtime < 0 then runtime = 0 end
+                        if runtime > 0 and runtime < getMinutesPerPercent() then
+                            runtime = 0
+                            node.runtimeDrainRemainder = 0
+                        end
                         node.runtimeMinutes = runtime
                         runtimeChanged = true
                     end

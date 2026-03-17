@@ -407,6 +407,16 @@ local function getRuntimeMinutesFromEnergyPercent(energyPercent)
     return clampRuntimeMinutes(clampEnergyPercent(energyPercent) * getMinutesPerPercent())
 end
 
+local function getEnergyPercentFromRuntimeMinutes(runtimeMinutes)
+    local runtime = clampRuntimeMinutes(runtimeMinutes)
+    local minutesPerPercent = getMinutesPerPercent()
+    if runtime <= 0 or minutesPerPercent <= 0 then return 0 end
+    if runtime < minutesPerPercent then
+        return 0
+    end
+    return clampEnergyPercent(math.floor(runtime / minutesPerPercent))
+end
+
 local function clampRadiusBonus(value)
     local n = math.floor(tonumber(value) or 0)
     if n < 0 then n = 0 end
@@ -2581,12 +2591,16 @@ local function consumeCentralRuntimePerMinute(store)
                     if drain > 0 then
                         runtime = runtime - drain
                         if runtime < 0 then runtime = 0 end
+                        if runtime > 0 and runtime < getMinutesPerPercent() then
+                            runtime = 0
+                            node.runtimeDrainRemainder = 0
+                        end
                         node.runtimeMinutes = runtime
                         runtimeChanged = true
                     end
 
                     if maxRuntimeAtFull > 0 then
-                        local newEnergy = clampEnergyPercent(math.ceil((runtime / maxRuntimeAtFull) * CFG.CentralEnergyMax))
+                        local newEnergy = getEnergyPercentFromRuntimeMinutes(runtime)
                         if runtime <= 0 then newEnergy = 0 end
                         if newEnergy ~= energy then
                             node.energy = newEnergy
