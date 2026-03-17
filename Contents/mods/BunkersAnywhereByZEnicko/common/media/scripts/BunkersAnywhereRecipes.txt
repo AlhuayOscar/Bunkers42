@@ -188,10 +188,10 @@ module Base
     {
         timedAction = DismantleElectrical,
         Time = 180,
-        SkillRequired = Mechanics:1,
+        SkillRequired = Mechanics:1;Woodwork:1,
         Tags = AnySurfaceCraft,
         category = Metalworking,
-        xpAward = Mechanics:1,
+        xpAward = Mechanics:1;Woodwork:1,
         inputs
         {
             item 6 [Base.SheetMetal] flags[NoBrokenItems],
