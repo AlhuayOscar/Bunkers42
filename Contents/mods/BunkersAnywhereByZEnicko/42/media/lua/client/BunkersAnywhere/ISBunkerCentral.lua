@@ -1,5 +1,6 @@
 BunkersAnywhere = BunkersAnywhere or {}
 require "ISUI/ISInventoryPaneContextMenu"
+require "BunkersAnywhere/ISBunkerShipping"
 
 BunkersAnywhere.InvisibleCentralGenerator = {
     DataKey = "BunkersAnywhereInvisibleCentralGenerators",
@@ -14,12 +15,6 @@ BunkersAnywhere.InvisibleCentralGenerator = {
     RadiusUpgradeBonuses = { 25 },
     RadiusUpgradeWireCosts = { 50 },
     RadiusUpgradeEnabled = true,
-}
-
-BunkersAnywhere.ShippingMailbox = {
-    SpriteName = "rooftop_furniture_3",
-    MaxCentralDistance = 20,
-    Enabled = false,
 }
 
 BunkersAnywhere.CentralBattery = {
@@ -58,6 +53,9 @@ local BA_LOCAL_TEXT = {
         IGUI_Bunker_CentralAlreadyLinked = "These centrals are already linked",
         IGUI_Bunker_CentralNoEnergyInsertBattery = "This central has no energy (0%). Insert a battery.",
         IGUI_Bunker_CentralInvalidBattery = "Invalid battery for this central",
+        IGUI_Bunker_CentralOverlayDetailed = "Central: %1 | %2% | %3",
+        IGUI_Bunker_CentralStateOn = "ON",
+        IGUI_Bunker_CentralStateOff = "OFF",
         ContextMenu_ConnectInvisibleGeneratorCentral = "Connect local electric central",
         ContextMenu_TurnOnInvisibleGeneratorCentral = "Turn on local electric central",
         ContextMenu_TurnOffInvisibleGeneratorCentral = "Turn off local electric central",
@@ -104,6 +102,9 @@ local BA_LOCAL_TEXT = {
         IGUI_Bunker_CentralAlreadyLinked = "Estas centrales ya estan enlazadas",
         IGUI_Bunker_CentralNoEnergyInsertBattery = "Esta central no tiene energia (0%). Inserta una bateria.",
         IGUI_Bunker_CentralInvalidBattery = "Bateria no valida para esta central",
+        IGUI_Bunker_CentralOverlayDetailed = "Central: %1 | %2% | %3",
+        IGUI_Bunker_CentralStateOn = "ENCENDIDA",
+        IGUI_Bunker_CentralStateOff = "APAGADA",
         ContextMenu_ConnectInvisibleGeneratorCentral = "Conectar central electrica local",
         ContextMenu_TurnOnInvisibleGeneratorCentral = "Encender central electrica local",
         ContextMenu_TurnOffInvisibleGeneratorCentral = "Apagar central electrica local",
@@ -559,6 +560,9 @@ function BunkersAnywhere.getInvisibleGeneratorStore()
     end
     local data = ModData.getOrCreate(BunkersAnywhere.InvisibleCentralGenerator.DataKey)
     data.nodes = data.nodes or {}
+    data.mailboxes = data.mailboxes or {}
+    data.inboxes = data.inboxes or {}
+    data.shippingDestinations = data.shippingDestinations or {}
     return data
 end
 
@@ -1419,94 +1423,6 @@ function BunkersAnywhere.removeCentralBattery(centralObj, playerObj, batteryInde
     })
 end
 
-function BunkersAnywhere.isShippingMailboxTile(obj)
-    if not BunkersAnywhere.ShippingMailbox.Enabled then return false end
-    if not obj or not obj.getSprite then return false end
-    local sprite = obj:getSprite()
-    if not sprite or not sprite.getName then return false end
-    local name = sprite:getName()
-    if name == BunkersAnywhere.ShippingMailbox.SpriteName then return true end
-    return string.match(name or "", "^rooftop_furniture_.*_3$") ~= nil
-end
-
-function BunkersAnywhere.findNearestActiveCentralNodeKeyFromSquare(sq)
-    if not sq then return nil end
-    local store = BunkersAnywhere.getInvisibleGeneratorStore()
-    local bestKey, bestDist = nil, 999999
-    for key, node in pairs(store.nodes) do
-        if node and node.active and node.z == sq:getZ() then
-            local dx = node.x - sq:getX()
-            local dy = node.y - sq:getY()
-            local dist = math.sqrt(dx * dx + dy * dy)
-            if dist <= BunkersAnywhere.ShippingMailbox.MaxCentralDistance and dist < bestDist then
-                bestKey = key
-                bestDist = dist
-            end
-        end
-    end
-    return bestKey
-end
-
-function BunkersAnywhere.findNearbyActiveMailbox(playerObj, radius)
-    local sq = playerObj and playerObj:getSquare()
-    if not sq then return nil end
-    local cell = getCell()
-    local px, py, pz = sq:getX(), sq:getY(), sq:getZ()
-    local r = radius or 1
-    for x = px - r, px + r do
-        for y = py - r, py + r do
-            local s = cell:getGridSquare(x, y, pz)
-            if s then
-                local objs = s:getObjects()
-                for i = 0, objs:size() - 1 do
-                    local o = objs:get(i)
-                    if BunkersAnywhere.isShippingMailboxTile(o) and o.getModData then
-                        local md = o:getModData()
-                        if md and md.baShippingMailboxActive then
-                            return o
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return nil
-end
-
-function BunkersAnywhere.activateShippingMailbox(mailObj, playerObj)
-    local sq = mailObj and mailObj:getSquare()
-    if not sq then return end
-    local centralKey = BunkersAnywhere.findNearestActiveCentralNodeKeyFromSquare(sq)
-    if not centralKey then
-        playerObj:setHaloNote(getText("IGUI_Bunker_MailNoCentralNearby"), 255, 80, 80, 400)
-        return
-    end
-    if sendClientCommand then
-        sendClientCommand("BunkersAnywhere", "ActivateShippingMailbox", { x = sq:getX(), y = sq:getY(), z = sq:getZ() })
-    end
-    playerObj:setHaloNote(getText("IGUI_Bunker_MailActivated"), 0, 255, 100, 350)
-end
-
-function BunkersAnywhere.sendShippingMailbox(mailObj, playerObj, targetX, targetY, targetZ)
-    local sq = mailObj and mailObj:getSquare()
-    if not sq then return end
-    if sendClientCommand then
-        sendClientCommand("BunkersAnywhere", "SendShippingMailboxToCentral", {
-            x = sq:getX(), y = sq:getY(), z = sq:getZ(),
-            tx = targetX, ty = targetY, tz = targetZ,
-        })
-    end
-    playerObj:setHaloNote(getText("IGUI_Bunker_MailSentTo", tostring(targetX), tostring(targetY), tostring(targetZ)), 80, 220, 255, 350)
-end
-
-function BunkersAnywhere.withdrawShippingMailbox(mailObj, playerObj)
-    local sq = mailObj and mailObj:getSquare()
-    if not sq then return end
-    if sendClientCommand then
-        sendClientCommand("BunkersAnywhere", "WithdrawShippingMailbox", { x = sq:getX(), y = sq:getY(), z = sq:getZ() })
-    end
-end
-
 function BunkersAnywhere.setInvisibleGeneratorCentralState(centralObj, playerObj, wantOn)
     local sq = centralObj and centralObj:getSquare()
     if not sq then return end
@@ -1624,80 +1540,9 @@ function BunkersAnywhere.onRemoveCentralBattery(centralObj, playerObj, batteryIn
     end
 end
 
-function BunkersAnywhere.onActivateShippingMailbox(mailObj, playerObj)
-    if luautils.walk(playerObj, mailObj:getSquare()) then
-        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, mailObj:getSquare(), 120, "Loot", "LightSwitch", BunkersAnywhere.activateShippingMailbox, mailObj, playerObj))
-    end
-end
-
-function BunkersAnywhere.onSendShippingMailbox(mailObj, playerObj, targetX, targetY, targetZ)
-    if luautils.walk(playerObj, mailObj:getSquare()) then
-        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, mailObj:getSquare(), 130, "Loot", "LightSwitch", BunkersAnywhere.sendShippingMailbox, mailObj, playerObj, targetX, targetY, targetZ))
-    end
-end
-
-function BunkersAnywhere.onWithdrawShippingMailbox(mailObj, playerObj)
-    if luautils.walk(playerObj, mailObj:getSquare()) then
-        ISTimedActionQueue.add(ISBunkerAction:new(playerObj, mailObj:getSquare(), 80, "Loot", "LightSwitch", BunkersAnywhere.withdrawShippingMailbox, mailObj, playerObj))
-    end
-end
-
-function BunkersAnywhere.depositSelectedItemsToMailbox(items, playerObj, mailObj)
-    if not mailObj or not mailObj.getModData then return end
-    local md = mailObj:getModData()
-    if not (md and md.baShippingMailboxActive) then return end
-
-    local payload = {}
-    local payloadCount = 0
-    local inv = playerObj:getInventory()
-
-    for _, itemGroup in ipairs(items) do
-        if instanceof(itemGroup, "InventoryItem") then
-            local item = itemGroup
-            payload[item:getFullType()] = (payload[item:getFullType()] or 0) + 1
-            payloadCount = payloadCount + 1
-        else
-            for _, item in ipairs(itemGroup.items) do
-                payload[item:getFullType()] = (payload[item:getFullType()] or 0) + 1
-                payloadCount = payloadCount + 1
-            end
-        end
-    end
-
-    local capacity = tonumber(md.baShippingMailboxCapacity) or 100
-    local current = tonumber(md.baShippingMailboxCount) or 0
-    if current + payloadCount > capacity then
-        playerObj:setHaloNote(getText("IGUI_Bunker_MailboxFull", tostring(capacity)), 255, 80, 80, 350)
-        return
-    end
-
-    for _, itemGroup in ipairs(items) do
-        if instanceof(itemGroup, "InventoryItem") then
-            inv:Remove(itemGroup)
-        else
-            for _, item in ipairs(itemGroup.items) do
-                inv:Remove(item)
-            end
-        end
-    end
-
-    local sq = mailObj:getSquare()
-    if sendClientCommand then
-        sendClientCommand("BunkersAnywhere", "DepositShippingMailbox", {
-            x = sq:getX(), y = sq:getY(), z = sq:getZ(), items = payload
-        })
-    end
-    playerObj:setHaloNote(getText("IGUI_Bunker_MailDeposited"), 0, 220, 255, 300)
-end
-
-function BunkersAnywhere.onDepositSelectedItemsToMailbox(items, playerObj, mailObj)
-    ISTimedActionQueue.add(ISBunkerAction:new(playerObj, playerObj:getSquare(), 70, "Loot", nil, BunkersAnywhere.depositSelectedItemsToMailbox, items, playerObj, mailObj))
-end
-
 local function BunkersAnywhereCentralInventoryContext(player, context, items)
     local playerObj = getSpecificPlayer(player)
     if not playerObj then return end
-    local mailObj = BunkersAnywhere.findNearbyActiveMailbox(playerObj, 1)
     local centralWestItem = nil
     local centralNorthItem = nil
 
@@ -1722,9 +1567,6 @@ local function BunkersAnywhereCentralInventoryContext(player, context, items)
         context:addOption(baText("ContextMenu_CentralRotateWest"), centralNorthItem, BunkersAnywhere.swapCentralMoveableOrientation, playerObj, "Base.ElectricCentral")
     end
 
-    if mailObj then
-        context:addOption(getText("ContextMenu_DepositToShippingMailbox"), items, BunkersAnywhere.onDepositSelectedItemsToMailbox, playerObj, mailObj)
-    end
 end
 
 Events.OnFillInventoryObjectContextMenu.Add(BunkersAnywhereCentralInventoryContext)
@@ -1742,7 +1584,6 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
     end
 
     local centralObj = nil
-    local mailObj = nil
     local firstSq = nil
     local function scanSquareObjects(sq)
         if not sq then return end
@@ -1770,9 +1611,6 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
                     centralObj = obj
                 end
             end
-            if not mailObj and BunkersAnywhere.isShippingMailboxTile(obj) then
-                mailObj = obj
-            end
         end
     end
 
@@ -1781,17 +1619,17 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
             local wo = worldobjects:get(i)
             local sq = wo and wo.getSquare and wo:getSquare() or nil
             scanSquareObjects(sq)
-            if centralObj and mailObj then break end
+            if centralObj then break end
         end
     else
         for _, wo in ipairs(worldobjects) do
             local sq = wo and wo.getSquare and wo:getSquare() or nil
             scanSquareObjects(sq)
-            if centralObj and mailObj then break end
+            if centralObj then break end
         end
     end
 
-    if not centralObj or not mailObj then
+    if not centralObj then
         scanSquareObjects(playerObj:getSquare())
     end
 
@@ -1889,7 +1727,6 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
             local radiusValue = BunkersAnywhere.InvisibleCentralGenerator.BaseRadius + radiusBonus
             local radiusInfo = context:addOption(baText("ContextMenu_CentralRadius", tostring(radiusValue)))
             radiusInfo.notAvailable = true
-
             if BunkersAnywhere.InvisibleCentralGenerator.RadiusUpgradeEnabled == true then
                 local nextBonus, need = BunkersAnywhere.getNextCentralRadiusUpgrade(radiusBonus)
                 if nextBonus then
@@ -2043,32 +1880,6 @@ local function BunkersAnywhereCentralWorldContext(player, context, worldobjects,
         end
     end
 
-    if mailObj and mailObj.getModData then
-        local mdMail = mailObj:getModData()
-        if not (mdMail and mdMail.baShippingMailboxActive) then
-            local nearKey = BunkersAnywhere.findNearestActiveCentralNodeKeyFromSquare(mailObj:getSquare())
-            local option = context:addOption(getText("ContextMenu_ActivateShippingMailbox"), mailObj, BunkersAnywhere.onActivateShippingMailbox, playerObj)
-            if not nearKey then option.notAvailable = true end
-        else
-            context:addOption(getText("ContextMenu_WithdrawFromShippingMailbox"), mailObj, BunkersAnywhere.onWithdrawShippingMailbox, playerObj)
-
-            local cKey = mdMail.baShippingCentralKey
-            local store = BunkersAnywhere.getInvisibleGeneratorStore()
-            local cNode = cKey and store.nodes[cKey] or nil
-            if cNode and cNode.links then
-                local sub = context:addOption(getText("ContextMenu_SendShippingMailbox"))
-                local subCtx = ISContextMenu:getNew(context)
-                context:addSubMenu(sub, subCtx)
-                for linkedKey, enabled in pairs(cNode.links) do
-                    if enabled and store.nodes[linkedKey] then
-                        local ln = store.nodes[linkedKey]
-                        local label = getText("ContextMenu_SendShippingMailboxTo", tostring(ln.x), tostring(ln.y), tostring(ln.z))
-                        subCtx:addOption(label, mailObj, BunkersAnywhere.onSendShippingMailbox, playerObj, ln.x, ln.y, ln.z)
-                    end
-                end
-            end
-        end
-    end
 
     local hasOwnedInvisibleGenerator = centralObj ~= nil
     if worldobjects.size and worldobjects.get then
@@ -2163,11 +1974,33 @@ local function canDrawCentralOverlayAtNode(node, playerX, playerY, playerZ, maxD
     return distSq <= maxDistSq
 end
 
+local function canDrawCentralOverlayAtSquare(square, playerX, playerY, playerZ, maxDistSq)
+    if not square then return false end
+    local z = square.getZ and square:getZ() or nil
+    if z ~= playerZ then return false end
+    local x = square.getX and square:getX() or nil
+    local y = square.getY and square:getY() or nil
+    if x == nil or y == nil then return false end
+    local dx = x - playerX
+    local dy = y - playerY
+    local distSq = dx * dx + dy * dy
+    return distSq <= maxDistSq
+end
+
 local function getCentralOverlayTextAndColor(node, md)
-    local nodeKey = BunkersAnywhere.getInvisibleGeneratorNodeKey(node.x, node.y, node.z)
-    local remaining = BunkersAnywhere.getCentralRemainingMinutesDisplay(node, md, nodeKey)
-    local text = "Central: " .. BunkersAnywhere.formatCentralRemainingTime(remaining)
-    local active = (node.active == true) and remaining > 0
+    local active = false
+    local text = baText("IGUI_Bunker_CentralInstalled")
+    local hasData = node ~= nil or md ~= nil
+
+    if hasData then
+        local remaining = BunkersAnywhere.getCentralRemainingMinutesDisplay(node, md, node and BunkersAnywhere.getInvisibleGeneratorNodeKey(node.x, node.y, node.z) or nil)
+        local energy = BunkersAnywhere.getCentralEnergyPercent(node, md)
+        local isOn = (node and node.active == true) or (md and (md.baInvisibleGeneratorOn == true or md.baInvisibleGeneratorLocalOn == true)) or false
+        local stateText = isOn and baText("IGUI_Bunker_CentralStateOn") or baText("IGUI_Bunker_CentralStateOff")
+        text = baText("IGUI_Bunker_CentralOverlayDetailed", tostring(stateText), tostring(energy), BunkersAnywhere.formatCentralRemainingTime(remaining))
+        active = isOn and remaining > 0 and energy > 0
+    end
+
     local r, g, b = 1.0, 0.85, 0.25
     if active then
         r, g, b = 0.25, 1.0, 0.35
@@ -2184,6 +2017,42 @@ local function drawCentralOverlayAtNode(tm, core, node, md)
     tm:DrawStringCentre(UIFont.Small, sx + 18, sy - 10, text, r, g, b, 0.95)
 end
 
+local function drawCentralOverlayAtSquare(tm, core, square, md)
+    if not square then return end
+    local text, r, g, b = getCentralOverlayTextAndColor(nil, md)
+    local sx, sy = worldToScreen(0, square:getX() + 0.5, square:getY() + 0.5, square:getZ() + 1.15)
+    if not sx or not sy then return end
+    if sx < -200 or sx > core:getScreenWidth() + 200 or sy < -200 or sy > core:getScreenHeight() + 200 then return end
+    tm:DrawStringCentre(UIFont.Small, sx + 18, sy - 10, text, r, g, b, 0.95)
+end
+
+local _baCentralOverlaySquareCache = {}
+local _baCentralOverlaySquareCachePlayerZ = nil
+local _baCentralOverlaySquareCacheTick = 0
+
+local function refreshCentralOverlaySquareCache(cell, px, py, pz, maxDistSq)
+    local found = {}
+    for x = px - 20, px + 20 do
+        for y = py - 20, py + 20 do
+            local sq = cell:getGridSquare(x, y, pz)
+            if sq and canDrawCentralOverlayAtSquare(sq, px, py, pz, maxDistSq) then
+                local centralObj = findCentralObjectOnSquare(sq)
+                local md = centralObj and centralObj.getModData and centralObj:getModData() or nil
+                local isInstalled = md and (md.baIsElectricCentral == true or md.baInvisibleGeneratorConnected ~= nil or md.baInvisibleGeneratorIsSource ~= nil or md.baCentralEnergyPercent ~= nil)
+                if centralObj and isInstalled then
+                    found[#found + 1] = {
+                        x = x,
+                        y = y,
+                        z = pz,
+                    }
+                end
+            end
+        end
+    end
+    _baCentralOverlaySquareCache = found
+    _baCentralOverlaySquareCachePlayerZ = pz
+end
+
 local function BunkersAnywhereDrawCentralRuntimeOverlay()
     local playerObj = getSpecificPlayer(0)
     if not playerObj then return end
@@ -2196,15 +2065,42 @@ local function BunkersAnywhereDrawCentralRuntimeOverlay()
     if not tm or not core then return end
 
     local store = BunkersAnywhere.getInvisibleGeneratorStore()
-    if not store or not store.nodes then return end
     local px, py, pz = pSq:getX(), pSq:getY(), pSq:getZ()
     local maxDistSq = 20 * 20
-    for _, node in pairs(store.nodes) do
-        if node and node.source ~= false and canDrawCentralOverlayAtNode(node, px, py, pz, maxDistSq) then
-            local sq = cell:getGridSquare(node.x, node.y, node.z)
+    local drawn = {}
+
+    if store and store.nodes then
+        for _, node in pairs(store.nodes) do
+            if node and node.source ~= false and canDrawCentralOverlayAtNode(node, px, py, pz, maxDistSq) then
+                local sq = cell:getGridSquare(node.x, node.y, node.z)
+                local centralObj = findCentralObjectOnSquare(sq)
+                local md = centralObj and centralObj.getModData and centralObj:getModData() or nil
+                local key = tostring(node.x) .. ":" .. tostring(node.y) .. ":" .. tostring(node.z)
+                drawn[key] = true
+                drawCentralOverlayAtNode(tm, core, node, md)
+            end
+        end
+    end
+
+    _baCentralOverlaySquareCacheTick = _baCentralOverlaySquareCacheTick + 1
+    local shouldRefreshCache = _baCentralOverlaySquareCachePlayerZ ~= pz
+        or _baCentralOverlaySquareCacheTick >= 30
+        or _baCentralOverlaySquareCache == nil
+    if shouldRefreshCache then
+        _baCentralOverlaySquareCacheTick = 0
+        refreshCentralOverlaySquareCache(cell, px, py, pz, maxDistSq)
+    end
+
+    for i = 1, #_baCentralOverlaySquareCache do
+        local entry = _baCentralOverlaySquareCache[i]
+        local key = tostring(entry.x) .. ":" .. tostring(entry.y) .. ":" .. tostring(entry.z)
+        if not drawn[key] then
+            local sq = cell:getGridSquare(entry.x, entry.y, entry.z)
             local centralObj = findCentralObjectOnSquare(sq)
             local md = centralObj and centralObj.getModData and centralObj:getModData() or nil
-            drawCentralOverlayAtNode(tm, core, node, md)
+            if centralObj and md then
+                drawCentralOverlayAtSquare(tm, core, sq, md)
+            end
         end
     end
 end
@@ -2229,6 +2125,51 @@ local function BunkersAnywhereOnServerCommand(module, command, args)
     if module ~= "BunkersAnywhere" then return end
     if command == "CentralBatteryPayout" then
         BunkersAnywhere.onServerCentralBatteryPayout(args or {})
+    elseif command == "ShippingDestinationsSync" then
+        local store = BunkersAnywhere.getInvisibleGeneratorStore()
+        local syncMs = getTimestampMs and getTimestampMs() or 0
+        local receivedCount = 0
+        BunkersAnywhere._lastShippingDestinationSyncMs = syncMs
+        store.shippingDestinations = {}
+        local list = args and args.destinations or nil
+        if list then
+            for i = 1, #list do
+                local entry = list[i]
+                if entry and entry.key then
+                    store.shippingDestinations[entry.key] = {
+                        x = entry.x,
+                        y = entry.y,
+                        z = entry.z,
+                        active = entry.active == true,
+                        centralKey = entry.centralKey,
+                        ownerUsername = entry.ownerUsername or "",
+                        ownerOnlineID = entry.ownerOnlineID or -1,
+                    }
+                    receivedCount = receivedCount + 1
+                end
+            end
+        end
+        if receivedCount > 0 then
+            BunkersAnywhere._shippingDestinationsCache = {}
+            for key, entry in pairs(store.shippingDestinations) do
+                BunkersAnywhere._shippingDestinationsCache[key] = {
+                    key = key,
+                    x = entry.x,
+                    y = entry.y,
+                    z = entry.z,
+                    active = entry.active == true,
+                    ownerUsername = entry.ownerUsername or "",
+                    ownerOnlineID = entry.ownerOnlineID or -1,
+                    centralKey = entry.centralKey,
+                }
+            end
+            BunkersAnywhere._shippingDestinationsCacheCount = receivedCount
+            BunkersAnywhere._lastNonEmptyShippingDestinationSyncMs = syncMs
+        end
+        if BunkersAnywhere._lastLoggedShippingDestinationCount ~= receivedCount then
+            BunkersAnywhere._lastLoggedShippingDestinationCount = receivedCount
+            print("[BunkersAnywhere][Shipping] destinations sync count=" .. tostring(receivedCount))
+        end
     elseif command == "RefreshInvisibleGenerators" then
         BunkersAnywhere.refreshOwnedInvisibleGenerators()
     end
