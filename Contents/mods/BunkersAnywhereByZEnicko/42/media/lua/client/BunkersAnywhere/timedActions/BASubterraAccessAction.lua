@@ -2,6 +2,33 @@ local BASubterraBaseAction = require("BunkersAnywhere/timedActions/BASubterraBas
 local BASubterraAPI = require("BunkersAnywhere/BASubterraAPI")
 local BASubterraText = require("BunkersAnywhere/BASubterraText")
 
+local function drainEndurance(character, amount)
+    local stats = character and character:getStats() or nil
+    if not stats then
+        return
+    end
+
+    local current = stats.get and stats:get(CharacterStat.ENDURANCE) or nil
+    if current == nil and stats.getEndurance then
+        current = stats:getEndurance()
+    end
+    if current == nil then
+        return
+    end
+
+    local nextValue = math.max(0, current - amount)
+    if stats.set then
+        stats:set(CharacterStat.ENDURANCE, nextValue)
+    elseif stats.setEndurance then
+        stats:setEndurance(nextValue)
+    end
+
+    local enduranceStat = SyncPlayerStatsPacket and SyncPlayerStatsPacket.Stat_Endurance or nil
+    if syncPlayerStats and enduranceStat ~= nil then
+        pcall(syncPlayerStats, character, enduranceStat)
+    end
+end
+
 local function hasBunkerMarker(square)
     if not square then
         return false
@@ -23,47 +50,6 @@ local function hasBunkerMarker(square)
     return false
 end
 
-local function addAccessObject(square, spriteName, bunkerType, orientation)
-    if not square then
-        return nil
-    end
-
-    local objects = square:getObjects()
-    if objects then
-        for i = 0, objects:size() - 1 do
-            local object = objects:get(i)
-            local md = object and object.getModData and object:getModData() or nil
-            if md and md.bunkerType == bunkerType and md.baSubterraAccess == true then
-                return object
-            end
-        end
-    end
-
-    local object = square:addTileObject(spriteName)
-    if not object then
-        return nil
-    end
-
-    local md = object:getModData()
-    md.bunkerType = bunkerType
-    md.baSubterraAccess = true
-    md.baSubterraOrientation = orientation
-
-    if isClient() and object.transmitCompleteItemToServer then
-        object:transmitCompleteItemToServer()
-    end
-
-    return object
-end
-
-local function placeAccessPair(topSquare, bottomSquare, orientation)
-    local entranceSprite = (BunkersAnywhere and BunkersAnywhere.getEntranceSprite and BunkersAnywhere.getEntranceSprite(topSquare)) or BASubterraAPI.Sprites.Entrance
-    local ladderSprite = (BunkersAnywhere and BunkersAnywhere.Sprites and BunkersAnywhere.Sprites.Ladder) or BASubterraAPI.Sprites.Ladder
-
-    addAccessObject(topSquare, entranceSprite, "Entrada de Bunker", orientation)
-    addAccessObject(bottomSquare, ladderSprite, "Escalera de Bunker", orientation)
-end
-
 local BASubterraAccessAction = BASubterraBaseAction:derive("BASubterraAccessAction")
 BASubterraAccessAction.__index = BASubterraAccessAction
 
@@ -72,38 +58,42 @@ BASubterraAccessAction.STONE_REWARD = 6
 
 function BASubterraAccessAction:complete()
     local x, y, z = self.originSquare:getX(), self.originSquare:getY(), self.originSquare:getZ()
-    local accessTopSquare
-    local firstLowerSquare
 
     if self.orientation == "south" then
-        accessTopSquare = BASubterraAPI.getOrCreateSquare(x, y + 1, z)
-        BASubterraAPI.digFloor(accessTopSquare)
-
         for i = 1, 3 do
+            BASubterraAPI.digFloor(getSquare(x, y + i, z))
             BASubterraAPI.digSquare(x, y + i, z - 1)
+            local belowSquare = BASubterraAPI.getOrCreateSquare(x, y + i, z - 1)
+            if belowSquare then
+                local obj = IsoObject.getNew(belowSquare, "fixtures_excavation_01_" .. tostring(6 - i), "", false)
+                belowSquare:transmitAddObjectToSquare(obj, -1)
+            end
         end
-        BASubterraAPI.digSquare(x, y + 4, z - 1)
-        firstLowerSquare = BASubterraAPI.getOrCreateSquare(x, y + 1, z - 1)
+        local endSquare = BASubterraAPI.getOrCreateSquare(x, y + 4, z - 1)
+        if endSquare and not endSquare:hasFloor() then
+            BASubterraAPI.digSquare(x, y + 4, z - 1)
+        end
     else
-        accessTopSquare = BASubterraAPI.getOrCreateSquare(x + 1, y, z)
-        BASubterraAPI.digFloor(accessTopSquare)
-
         for i = 1, 3 do
+            BASubterraAPI.digFloor(getSquare(x + i, y, z))
             BASubterraAPI.digSquare(x + i, y, z - 1)
+            local belowSquare = BASubterraAPI.getOrCreateSquare(x + i, y, z - 1)
+            if belowSquare then
+                local obj = IsoObject.getNew(belowSquare, "fixtures_excavation_01_" .. tostring(3 - i), "", false)
+                belowSquare:transmitAddObjectToSquare(obj, -1)
+            end
         end
-        BASubterraAPI.digSquare(x + 4, y, z - 1)
-        firstLowerSquare = BASubterraAPI.getOrCreateSquare(x + 1, y, z - 1)
+        local endSquare = BASubterraAPI.getOrCreateSquare(x + 4, y, z - 1)
+        if endSquare and not endSquare:hasFloor() then
+            BASubterraAPI.digSquare(x + 4, y, z - 1)
+        end
     end
-
-    placeAccessPair(accessTopSquare, firstLowerSquare, self.orientation)
 
     local inverseStrengthLevel = 10 - self.character:getPerkLevel(Perks.Strength)
     self.character:addArmMuscleStrain(3 + 4 * inverseStrengthLevel / 10)
     self.character:addBackMuscleStrain(2 + 2 * inverseStrengthLevel / 10)
 
-    local stats = self.character:getStats()
-    stats:setEndurance(stats:getEndurance() - (0.4 + inverseStrengthLevel / 80))
-    syncPlayerStats(self.character, SyncPlayerStatsPacket.Stat_Endurance)
+    drainEndurance(self.character, 0.4 + inverseStrengthLevel / 80)
 
     self.character:setHaloNote(BASubterraText.get("IGUI_BASubterraAccessBuilt"), 0, 255, 100, 300)
     return BASubterraBaseAction.complete(self)
@@ -149,7 +139,14 @@ function BASubterraAccessAction.canBePerformed(character, material, square, orie
             endSquare = getSquare(x + 4, y, z - 1)
         end
 
-        if endSquare and (BASubterraAPI.isInPlayableArea(endSquare) and (not endSquare:hasFloor() or endSquare:Is("BlocksPlacement"))) then
+        local blocked = false
+        if endSquare and endSquare.Is then
+            local ok, value = pcall(function()
+                return endSquare:Is("BlocksPlacement")
+            end)
+            blocked = ok and value or false
+        end
+        if endSquare and (BASubterraAPI.isInPlayableArea(endSquare) and (not endSquare:hasFloor() or blocked)) then
             return false, "Tooltip_BASubterraBlocked"
         end
     end

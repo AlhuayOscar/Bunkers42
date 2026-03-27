@@ -3,8 +3,8 @@ require "BunkersAnywhere/ISBunkerDoor"
 local BASubterraAPI = require("BunkersAnywhere/BASubterraAPI")
 local BASubterraData = require("BunkersAnywhere/BASubterraData")
 local BASubterraText = require("BunkersAnywhere/BASubterraText")
-local ISBASubterraRoomCursor = require("BuildingObjects/ISBASubterraRoomCursor")
-local ISBASubterraAccessCursor = require("BuildingObjects/ISBASubterraAccessCursor")
+local RoomCursor = require("BuildingObjects/ISBASubterraRoomCursor")
+local AccessCursor = require("BuildingObjects/ISBASubterraAccessCursor")
 
 local badColour = getCore():getBadHighlitedColor()
 badColour = table.newarray(badColour:getR(), badColour:getG(), badColour:getB())
@@ -24,11 +24,15 @@ local function addGenericDigTooltip(option, reason, arg1, arg2)
 end
 
 local function onDigRoom(player)
-    getCell():setDrag(ISBASubterraRoomCursor:new(player), player:getPlayerNum())
+    if RoomCursor and RoomCursor.new then
+        getCell():setDrag(RoomCursor.new(player), player:getPlayerNum())
+    end
 end
 
 local function onDigAccess(player)
-    getCell():setDrag(ISBASubterraAccessCursor:new(player), player:getPlayerNum())
+    if AccessCursor and AccessCursor.new then
+        getCell():setDrag(AccessCursor.new(player), player:getPlayerNum())
+    end
 end
 
 local function getGenericRoomState(player)

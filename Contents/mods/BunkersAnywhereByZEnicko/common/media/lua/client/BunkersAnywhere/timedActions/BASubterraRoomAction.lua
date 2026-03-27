@@ -2,6 +2,33 @@ local BASubterraBaseAction = require("BunkersAnywhere/timedActions/BASubterraBas
 local BASubterraAPI = require("BunkersAnywhere/BASubterraAPI")
 local BASubterraText = require("BunkersAnywhere/BASubterraText")
 
+local function drainEndurance(character, amount)
+    local stats = character and character:getStats() or nil
+    if not stats then
+        return
+    end
+
+    local current = stats.get and stats:get(CharacterStat.ENDURANCE) or nil
+    if current == nil and stats.getEndurance then
+        current = stats:getEndurance()
+    end
+    if current == nil then
+        return
+    end
+
+    local nextValue = math.max(0, current - amount)
+    if stats.set then
+        stats:set(CharacterStat.ENDURANCE, nextValue)
+    elseif stats.setEndurance then
+        stats:setEndurance(nextValue)
+    end
+
+    local enduranceStat = SyncPlayerStatsPacket and SyncPlayerStatsPacket.Stat_Endurance or nil
+    if syncPlayerStats and enduranceStat ~= nil then
+        pcall(syncPlayerStats, character, enduranceStat)
+    end
+end
+
 local function isStandableSquare(square)
     if not square or not square:hasFloor() or square:HasStairs() then
         return false
@@ -120,9 +147,7 @@ function BASubterraRoomAction:complete()
     local inverseStrengthLevel = 10 - self.character:getPerkLevel(Perks.Strength)
     self.character:addArmMuscleStrain(2 + 3 * inverseStrengthLevel / 10)
 
-    local stats = self.character:getStats()
-    stats:setEndurance(stats:getEndurance() - (0.2 + inverseStrengthLevel / 80))
-    syncPlayerStats(self.character, SyncPlayerStatsPacket.Stat_Endurance)
+    drainEndurance(self.character, 0.2 + inverseStrengthLevel / 80)
 
     self.character:setHaloNote(BASubterraText.get("IGUI_BASubterraRoomBuilt"), 0, 255, 100, 250)
     return BASubterraBaseAction.complete(self)

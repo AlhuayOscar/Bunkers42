@@ -6,14 +6,37 @@ BASubterraAPI.MIN_Z = -32
 BASubterraAPI.STONE_LEVEL = -2
 BASubterraAPI.DIRT_SACKS_ROOM = 3
 BASubterraAPI.DIRT_SACKS_ACCESS = 6
+BASubterraAPI.DEBUG_CLIMATE = true
 
 BASubterraAPI.Sprites = {
-    WallWest = "walls_interior_01_16",
-    WallNorth = "walls_interior_01_17",
-    CornerNorthWest = "walls_interior_01_18",
-    Floor = "floors_street_01_16",
+    WallWest = "walls_underground_dirt_1",
+    WallNorth = "walls_underground_dirt_0",
+    CornerNorthWest = "walls_underground_dirt_2",
+    CornerSouthEast = "walls_underground_dirt_3",
+    Floor = "blends_natural_01_64",
+    StoneWallWest = "walls_logs_96",
+    StoneWallNorth = "walls_logs_97",
+    StoneCornerNorthWest = "walls_logs_98",
+    StoneCornerSouthEast = "walls_logs_99",
+    StoneFloor = "floors_exterior_street_01_0",
     Entrance = "street_decoration_01_15",
     Ladder = "location_sewer_01_32",
+}
+
+BASubterraAPI.DIRT = {
+    wallNorth = BASubterraAPI.Sprites.WallNorth,
+    wallWest = BASubterraAPI.Sprites.WallWest,
+    wallCornerNorthwest = BASubterraAPI.Sprites.CornerNorthWest,
+    wallCornerSoutheast = BASubterraAPI.Sprites.CornerSouthEast,
+    floor = BASubterraAPI.Sprites.Floor,
+}
+
+BASubterraAPI.STONE = {
+    wallNorth = BASubterraAPI.Sprites.StoneWallNorth,
+    wallWest = BASubterraAPI.Sprites.StoneWallWest,
+    wallCornerNorthwest = BASubterraAPI.Sprites.StoneCornerNorthWest,
+    wallCornerSoutheast = BASubterraAPI.Sprites.StoneCornerSouthEast,
+    floor = BASubterraAPI.Sprites.StoneFloor,
 }
 
 local CELL
@@ -25,12 +48,13 @@ local function getCellRef()
     return CELL or getCell()
 end
 
-local DIGGABLE_SPRITES = {
-    [BASubterraAPI.Sprites.WallWest] = true,
-    [BASubterraAPI.Sprites.WallNorth] = true,
-    [BASubterraAPI.Sprites.CornerNorthWest] = true,
-    [BASubterraAPI.Sprites.Floor] = true,
-}
+local DIGGABLE_SPRITES = {}
+for _, sprite in pairs(BASubterraAPI.DIRT) do
+    DIGGABLE_SPRITES[sprite] = true
+end
+for _, sprite in pairs(BASubterraAPI.STONE) do
+    DIGGABLE_SPRITES[sprite] = true
+end
 
 local invalidatedChunkLevels = {}
 
@@ -101,16 +125,44 @@ local function objectHasProperty(object, flag)
     return false
 end
 
+local function itemHasTag(item, tag)
+    if not item or not item.hasTag then
+        return false
+    end
+
+    local ok, value = pcall(function()
+        return item:hasTag(tag)
+    end)
+    return ok and value or false
+end
+
+local function itemIsBroken(item)
+    if not item or not item.isBroken then
+        return false
+    end
+
+    local ok, value = pcall(function()
+        return item:isBroken()
+    end)
+    return ok and value or false
+end
+
 function BASubterraAPI.canCarryDirt(item)
-    return item and item.hasTag and item:hasTag("HoldDirt") or false
+    if not itemHasTag(item, ItemTag.HOLD_DIRT) then
+        return false
+    end
+
+    local inventory = item.getInventory and item:getInventory() or nil
+    return inventory and inventory:isEmpty() or false
 end
 
 function BASubterraAPI.canDigDirt(item)
-    return item and item.hasTag and item:hasTag("DigGrave") and not item:isBroken() or false
+    return not itemIsBroken(item)
+        and (itemHasTag(item, ItemTag.DIG_GRAVE) or itemHasTag(item, ItemTag.TAKE_DIRT))
 end
 
 function BASubterraAPI.canDigStone(item)
-    return item and item.hasTag and item:hasTag("PickAxe") and not item:isBroken() or false
+    return not itemIsBroken(item) and itemHasTag(item, ItemTag.PICK_AXE)
 end
 
 function BASubterraAPI.isDiggableSpriteName(spriteName)
@@ -162,6 +214,10 @@ function BASubterraAPI.getWall(square, side)
 
     if side == "northwest" then
         return square:getWallNW()
+    end
+
+    if side == "southeast" then
+        return square:getWallSE()
     end
 
     if side == "north" then
@@ -259,12 +315,59 @@ function BASubterraAPI.isOpenSquare(square)
     return square:hasFloor() or BASubterraData.isFloorRemoved(square)
 end
 
+function BASubterraAPI.isSubterraSquare(square)
+    if not square or square:getZ() >= 0 then
+        return false
+    end
+
+    return BASubterraAPI.isOpenSquare(square)
+end
+
+function BASubterraAPI.isCoveredSquare(square)
+    if not BASubterraAPI.isSubterraSquare(square) then
+        return false
+    end
+
+    local x = square:getX()
+    local y = square:getY()
+
+    for z = square:getZ() + 1, 0 do
+        local aboveSquare = getSquare(x, y, z)
+        if not aboveSquare then
+            return false
+        end
+
+        if BASubterraData.isFloorRemoved(aboveSquare) then
+            return false
+        end
+
+        if not aboveSquare:hasFloor() then
+            return false
+        end
+    end
+
+    return true
+end
+
+function BASubterraAPI.getShelterState(square)
+    if not BASubterraAPI.isSubterraSquare(square) then
+        return "none"
+    end
+
+    if BASubterraAPI.isCoveredSquare(square) then
+        return "covered"
+    end
+
+    return "open-shaft"
+end
+
 function BASubterraAPI.characterCanDig(character, material)
     if not character then
         return false, "Tooltip_BASubterraBlocked"
     end
 
-    if character:getMoodles():getMoodleLevel(MoodleType.Endurance) > 1 then
+    local stats = character:getStats()
+    if not stats or not stats:isAboveMinimum(CharacterStat.ENDURANCE) then
         return false, "Tooltip_BASubterraTooExhausted"
     end
 
@@ -313,6 +416,23 @@ function BASubterraAPI.canDig(square)
     return true
 end
 
+function BASubterraAPI.isDiggableFloor(floor)
+    if not floor or not floor.getSprite or not floor:getSprite() then
+        return false
+    end
+
+    local spriteName = floor:getSprite():getName()
+    if spriteName == BASubterraAPI.DIRT.floor
+            or spriteName == BASubterraAPI.STONE.floor
+            or luautils.stringStarts(spriteName, "floors_street_01")
+            or luautils.stringStarts(spriteName, "floors_exterior_natural")
+            or luautils.stringStarts(spriteName, "blends_natural_01") then
+        return true
+    end
+
+    return false
+end
+
 function BASubterraAPI.canDigDownFrom(square)
     if not square then
         return false
@@ -323,7 +443,8 @@ function BASubterraAPI.canDigDownFrom(square)
         return false
     end
 
-    if not square:hasFloor() then
+    local floor = square:getFloor()
+    if not floor or not BASubterraAPI.isDiggableFloor(floor) then
         return false
     end
 
@@ -340,8 +461,13 @@ function BASubterraAPI.isSquareClear(square, orientation, exclude)
         return false
     end
 
-    if square:Is("BlocksPlacement") then
-        return false
+    if square.Is then
+        local ok, blocked = pcall(function()
+            return square:Is("BlocksPlacement")
+        end)
+        if ok and blocked then
+            return false
+        end
     end
 
     if orientation then
@@ -349,11 +475,12 @@ function BASubterraAPI.isSquareClear(square, orientation, exclude)
         local objects = square:getLuaTileObjectList()
         for i = 1, #objects do
             local object = objects[i]
-            local sprite = object:getSprite()
-            if (sprite and sprite:getProperties():Is(isSouth and IsoFlagType.collideN or IsoFlagType.collideW))
-                    or ((instanceof(object, "IsoThumpable") and object:getNorth() == isSouth) and not object:isCorner() and not object:isFloor())
-                    or (instanceof(object, "IsoWindow") and object:getNorth() == isSouth)
-                    or (instanceof(object, "IsoDoor") and object:getNorth() == isSouth) then
+            local sprite = object and object.getSprite and object:getSprite() or nil
+            local properties = sprite and sprite.getProperties and sprite:getProperties() or nil
+            if (properties and properties.Is and properties:Is(isSouth and IsoFlagType.collideN or IsoFlagType.collideW))
+                    or ((instanceof(object, "IsoThumpable") and object.getNorth and object:getNorth() == isSouth) and not object:isCorner() and not object:isFloor())
+                    or (instanceof(object, "IsoWindow") and object.getNorth and object:getNorth() == isSouth)
+                    or (instanceof(object, "IsoDoor") and object.getNorth and object:getNorth() == isSouth) then
                 return false
             end
         end
@@ -469,29 +596,60 @@ function BASubterraAPI.digFloor(square)
     queueChunkRefresh(square:getX(), square:getY(), square:getZ())
 end
 
-local function addWall(square, side)
+local function addCornerIfNeeded(x, y, z, material)
+    local square = BASubterraAPI.getOrCreateSquare(x, y, z)
+    if square and not square:getWall() then
+        local obj = IsoObject.getNew(square, material.wallCornerSoutheast, "", false)
+        square:transmitAddObjectToSquare(obj, -1)
+    end
+end
+
+local function removeCorner(square)
+    if not square then
+        return
+    end
+
+    local corner = square:getWallSE()
+    if not corner or not corner:getSprite() then
+        return
+    end
+
+    local spriteName = corner:getSprite():getName()
+    if spriteName == BASubterraAPI.DIRT.wallCornerSoutheast
+            or spriteName == BASubterraAPI.STONE.wallCornerSoutheast then
+        square:transmitRemoveItemFromSquare(corner)
+    end
+end
+
+local function digWall(square, side)
+    local wall = BASubterraAPI.getWall(square, side)
+    if wall and wall:getSprite() and DIGGABLE_SPRITES[wall:getSprite():getName()] then
+        BASubterraAPI.removeWall(square, side)
+    end
+end
+
+local function addWall(square, material, side)
     if not square or BASubterraAPI.getWall(square, side) then
         return
     end
 
-    local otherSide = side == "north" and "west" or "north"
-    local otherWall = BASubterraAPI.getWall(square, otherSide)
     local spriteName
+    local otherWall = BASubterraAPI.getWall(square, side == "north" and "west" or "north")
     if otherWall and otherWall:getSprite() then
         local otherName = otherWall:getSprite():getName()
-        if (side == "north" and otherName == BASubterraAPI.Sprites.WallWest)
-                or (side == "west" and otherName == BASubterraAPI.Sprites.WallNorth) then
+        if otherName == (side == "north" and material.wallWest or material.wallNorth) then
             square:transmitRemoveItemFromSquare(otherWall)
-            spriteName = BASubterraAPI.Sprites.CornerNorthWest
+            spriteName = material.wallCornerNorthwest
         end
     end
 
     if not spriteName then
-        spriteName = side == "north" and BASubterraAPI.Sprites.WallNorth or BASubterraAPI.Sprites.WallWest
+        spriteName = side == "north" and material.wallNorth or material.wallWest
     end
 
     local obj = IsoObject.getNew(square, spriteName, "", false)
     square:transmitAddObjectToSquare(obj, -1)
+    removeCorner(square)
 end
 
 function BASubterraAPI.digSquare(x, y, z)
@@ -502,56 +660,89 @@ function BASubterraAPI.digSquare(x, y, z)
 
     removeBlacklistedObjects(square)
 
+    local floorMaterial = z <= BASubterraAPI.STONE_LEVEL and BASubterraAPI.STONE or BASubterraAPI.DIRT
     if not square:getFloor() then
-        local obj = IsoObject.getNew(square, BASubterraAPI.Sprites.Floor, "", false)
+        local obj = IsoObject.getNew(square, floorMaterial.floor, "", false)
         square:transmitAddObjectToSquare(obj, -1)
     end
 
+    local wallMaterial = z < BASubterraAPI.STONE_LEVEL and BASubterraAPI.STONE or BASubterraAPI.DIRT
+    local southOrEastWallAdded = false
+    local southEastSquare = BASubterraAPI.getOrCreateSquare(x + 1, y + 1, z)
+
     local southSquare = BASubterraAPI.getOrCreateSquare(x, y + 1, z)
     if BASubterraAPI.isOpenSquare(southSquare) then
-        BASubterraAPI.removeWall(southSquare, "north")
+        digWall(southSquare, "north")
+        removeCorner(southEastSquare)
     else
-        addWall(southSquare, "north")
+        addWall(southSquare, wallMaterial, "north")
+        southOrEastWallAdded = true
     end
     removeBlacklistedObjects(southSquare)
 
     local eastSquare = BASubterraAPI.getOrCreateSquare(x + 1, y, z)
     if BASubterraAPI.isOpenSquare(eastSquare) then
-        BASubterraAPI.removeWall(eastSquare, "west")
+        digWall(eastSquare, "west")
+        removeCorner(southEastSquare)
     else
-        addWall(eastSquare, "west")
+        addWall(eastSquare, wallMaterial, "west")
+        southOrEastWallAdded = true
     end
     removeBlacklistedObjects(eastSquare)
 
+    if southOrEastWallAdded then
+        addCornerIfNeeded(x + 1, y + 1, z, wallMaterial)
+    end
+
+    local needsCornerAdded = true
+    local northOrWestWallAdded = false
+
     local northSquare = BASubterraAPI.getOrCreateSquare(x, y - 1, z)
     if BASubterraAPI.isOpenSquare(northSquare) then
-        BASubterraAPI.removeWall(square, "north")
+        digWall(square, "north")
+        removeCorner(eastSquare)
+        needsCornerAdded = needsCornerAdded and BASubterraAPI.getWall(square, "west") ~= nil
     else
-        addWall(square, "north")
+        addWall(square, wallMaterial, "north")
+        addCornerIfNeeded(x + 1, y, z, wallMaterial)
+        northOrWestWallAdded = true
     end
     removeBlacklistedObjects(northSquare)
 
     local westSquare = BASubterraAPI.getOrCreateSquare(x - 1, y, z)
     if BASubterraAPI.isOpenSquare(westSquare) then
-        BASubterraAPI.removeWall(square, "west")
+        digWall(square, "west")
+        removeCorner(southSquare)
+        needsCornerAdded = needsCornerAdded and BASubterraAPI.getWall(square, "north") ~= nil
     else
-        addWall(square, "west")
+        addWall(square, wallMaterial, "west")
+        addCornerIfNeeded(x, y + 1, z, wallMaterial)
+        northOrWestWallAdded = true
     end
     removeBlacklistedObjects(westSquare)
 
-    buildUtil.setHaveConstruction(square, true)
+    if needsCornerAdded then
+        local obj = IsoObject.getNew(square, wallMaterial.wallCornerSoutheast, "", false)
+        square:transmitAddObjectToSquare(obj, -1)
+    end
 
-    touchSquare(square)
-    touchSquare(southSquare)
-    touchSquare(eastSquare)
-    touchSquare(northSquare)
-    touchSquare(westSquare)
+    if northOrWestWallAdded then
+        removeCorner(square)
+    end
+
+    buildUtil.setHaveConstruction(square, true)
+    square:setSquareChanged()
+
+    for xOffset = -1, 1, 2 do
+        for yOffset = -1, 1, 2 do
+            local cornerSquare = getSquare(x + xOffset, y + yOffset, z)
+            if cornerSquare then
+                removeBlacklistedObjects(square)
+            end
+        end
+    end
 
     queueChunkRefresh(x, y, z)
-    queueChunkRefresh(x, y + 1, z)
-    queueChunkRefresh(x + 1, y, z)
-    queueChunkRefresh(x, y - 1, z)
-    queueChunkRefresh(x - 1, y, z)
 
     return square
 end
