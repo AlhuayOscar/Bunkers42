@@ -7,6 +7,8 @@ BASubterraAPI.STONE_LEVEL = -2
 BASubterraAPI.DIRT_SACKS_ROOM = 3
 BASubterraAPI.DIRT_SACKS_ACCESS = 6
 BASubterraAPI.DEBUG_CLIMATE = true
+BASubterraAPI.SANDBOX_NAMESPACE = "BunkersAnywhereByZEnicko"
+BASubterraAPI.SANDBOX_OPTION = "BasementExpansionExperimental"
 
 BASubterraAPI.Sprites = {
     WallWest = "walls_underground_dirt_1",
@@ -46,6 +48,15 @@ end)
 
 local function getCellRef()
     return CELL or getCell()
+end
+
+function BASubterraAPI.isEnabled()
+    local sandbox = SandboxVars and SandboxVars[BASubterraAPI.SANDBOX_NAMESPACE] or nil
+    if not sandbox then
+        return false
+    end
+
+    return sandbox[BASubterraAPI.SANDBOX_OPTION] == true
 end
 
 local DIGGABLE_SPRITES = {}

@@ -1,0 +1,9 @@
+VERSION = 1,
+
+option BunkersAnywhereByZEnicko.BasementExpansionExperimental
+{
+    type = boolean,
+    default = false,
+    page = BunkersAnywhereByZEnicko,
+    translation = BunkersAnywhereByZEnicko_BasementExpansionExperimental,
+}

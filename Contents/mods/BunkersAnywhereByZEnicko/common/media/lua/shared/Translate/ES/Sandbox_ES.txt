@@ -1,0 +1,5 @@
+Sandbox_ES = {
+    Sandbox_BunkersAnywhereByZEnicko = "Bunkers anywhere by ZEnicko",
+    Sandbox_BunkersAnywhereByZEnicko_BasementExpansionExperimental = "Basement expansion *EXPERIMENTAL*",
+    Sandbox_BunkersAnywhereByZEnicko_BasementExpansionExperimental_tooltip = "Activa el sistema independiente de excavacion y expansion de sotanos. Esta funcion es experimental y viene desactivada por defecto.",
+}

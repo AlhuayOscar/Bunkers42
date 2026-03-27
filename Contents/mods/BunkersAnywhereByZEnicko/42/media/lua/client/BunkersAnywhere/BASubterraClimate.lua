@@ -120,6 +120,10 @@ local function logTileState(player, square, shelterState)
 end
 
 local function updatePlayerClimate(player)
+    if not BASubterraAPI.isEnabled() then
+        return
+    end
+
     if not player or player:isDead() then
         return
     end

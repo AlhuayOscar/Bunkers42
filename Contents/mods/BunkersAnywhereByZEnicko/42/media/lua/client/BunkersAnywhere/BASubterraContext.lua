@@ -77,6 +77,10 @@ local function getGenericAccessState(player)
 end
 
 local function onFillWorldObjectContextMenu(playerNum, context)
+    if not BASubterraAPI.isEnabled() then
+        return
+    end
+
     local player = getSpecificPlayer(playerNum)
     if not player or player:isDead() then
         return
